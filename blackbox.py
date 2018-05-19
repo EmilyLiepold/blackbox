@@ -36,8 +36,7 @@ def get_default_executor():
         return Pool
 
 def getInitialPoints(box,n):
-    d = len(box)
-    points = latin(n,d)
+    points = latin(n,len(box))
     return unScalePoints(box,points)
 
 def unScalePoint(box,point):
@@ -56,6 +55,38 @@ def ScalePoints(box,points):
 def default_break_checker(*args):
     return False
 
+
+def getFit(points,nrand=10000,nrand_frac=0.05):
+    # Get the dimension of the data
+    d = len(points[0]) - 1
+
+    # make sure that the input data is a numpy array
+    points = np.asarray(points)
+
+    # Construct the space-rescaling matrix
+    T = np.identity(d)
+
+    if d > 1:
+        # Perform the initial fit
+        fit_noscale = rbf(points, np.identity(d))
+
+        # Construct a space of random points and calculate the fit at those points.
+        population = np.zeros((nrand, d+1))
+        population[:, 0:-1] = np.random.rand(nrand, d)
+        population[:, -1] = list(map(fit_noscale, population[:, 0:-1]))
+
+        # Grab ths points with the smallest fit values.
+        cloud = population[population[:, -1].argsort()][0:int(nrand*nrand_frac), 0:-1]
+
+        # Construct the covariance matrix and find its eigensystem
+        eigval, eigvec = np.linalg.eig(np.cov(np.transpose(cloud)))
+
+        # Use that eigensystem to construct the space-rescaling vector
+        T = [eigvec[:, j]/np.sqrt(eigval[j]) for j in range(d)]
+        T = T/np.linalg.norm(T)
+
+    # Fit given the spatial rescaling
+    return(rbf(points,T))
 
 def search(f, box, n, m, batch, resfile,
            rho0=0.5, p=1.0, nrand=10000, nrand_frac=0.05,
@@ -124,24 +155,10 @@ def search(f, box, n, m, batch, resfile,
         v1 = 2*(4*np.pi)**((d-1)/2)*np.math.factorial((d-1)/2)/np.math.factorial(d)
 
     # subsequent iterations (current subsequent iteration = i*batch+j)
-    T = np.identity(d)
 
     for i in range(m//batch):
 
-        # refining scaling matrix T
-        if d > 1:
-            fit_noscale = rbf(points, np.identity(d))
-            population = np.zeros((nrand, d+1))
-            population[:, 0:-1] = np.random.rand(nrand, d)
-            population[:, -1] = list(map(fit_noscale, population[:, 0:-1]))
-
-            cloud = population[population[:, -1].argsort()][0:int(nrand*nrand_frac), 0:-1]
-            eigval, eigvec = np.linalg.eig(np.cov(np.transpose(cloud)))
-            T = [eigvec[:, j]/np.sqrt(eigval[j]) for j in range(d)]
-            T = T/np.linalg.norm(T)
-
-        # sampling next batch of points
-        fit = rbf(points, T)
+        fit = getFit(points,nrand=nrand,nrand_frac=nrand_frac)
 
         # check if the current fit is sufficiently converged.
         if i > 0:
