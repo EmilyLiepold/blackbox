@@ -124,12 +124,16 @@ def search(f, box, n, m, batch, resfile,
 
         # sampling next batch of points
         fit = rbf(points, T)
+
+        # check if the current fit is sufficiently converged.
         if i > 0:
             if breakCheckFn(fit, prevFit, fmax, prevFmax):
                 break
+
+        # store the current fit for use in the next iteration
         prevFit = fit
         prevFmax = fmax
-        
+
         points = np.append(points, np.zeros((batch, d+1)), axis=0)
 
         for j in range(batch):
@@ -153,6 +157,10 @@ def search(f, box, n, m, batch, resfile,
     labels = [' par_'+str(i+1)+(7-len(str(i+1)))*' '+',' for i in range(d)]+[' f_value    ']
     np.savetxt(resfile, points, delimiter=',', fmt=' %+1.4e', header=''.join(labels), comments='')
 
+    def returnedScaleFit(x):
+        return fmax * fit(cubetobox(x))
+
+    return points, returnedScaleFit
 
 def latin(n, d):
     """
