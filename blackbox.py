@@ -35,10 +35,13 @@ def get_default_executor():
             pool.terminate()
         return Pool
 
+def default_break_checker(*args):
+    return False
+
 
 def search(f, box, n, m, batch, resfile,
            rho0=0.5, p=1.0, nrand=10000, nrand_frac=0.05,
-           executor=get_default_executor()):
+           executor=get_default_executor(), breakCheckFn=default_break_checker):
     """
     Minimize given expensive black-box function and save results into text file.
 
@@ -121,6 +124,12 @@ def search(f, box, n, m, batch, resfile,
 
         # sampling next batch of points
         fit = rbf(points, T)
+        if i > 0:
+            if breakCheckFn(fit, prevFit, fmax, prevFmax):
+                break
+        prevFit = fit
+        prevFmax = fmax
+        
         points = np.append(points, np.zeros((batch, d+1)), axis=0)
 
         for j in range(batch):
