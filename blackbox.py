@@ -35,6 +35,24 @@ def get_default_executor():
             pool.terminate()
         return Pool
 
+def getInitialPoints(box,n):
+    d = len(box)
+    points = latin(n,d)
+    return unScalePoints(box,points)
+
+def unScalePoint(box,point):
+    return [box[i][0]+(box[i][1]-box[i][0])*point[i] for i in range(d)]
+
+def unScalePoints(box,points):
+    return [unScalePoint(box, point) for point in points]
+
+def ScalePoint(box,point):
+    return [(point[i] - box[i][0]) / (box[i][1]-box[i][0])  for i in range(d)]
+
+def ScalePoints(box,points):
+    return [ScalePoint(box, point) for point in points]
+
+
 def default_break_checker(*args):
     return False
 
