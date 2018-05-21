@@ -88,7 +88,7 @@ def getFit(points,nrand=10000,nrand_frac=0.05):
     # Fit given the spatial rescaling
     return(rbf(points,T))
 
-def getNewPoints(fit,currentPoints,batch,rho0):
+def getNewPoints(fit,currentPoints,batch,rho0=0.5,p=1.0):
 
     N  = len(currentPoints)
     d  = len(currentPoints[0]) - 1
@@ -199,7 +199,7 @@ def search(f, box, n, m, batch, resfile,
         prevFit = fit
         prevFmax = fmax
 
-        points, newpoints = getNewPoints(fit,points,batch,rho0)
+        points, newpoints = getNewPoints(fit,points,batch,rho0=rho0, p=p)
 
         with executor() as e:
             points[n+batch*i:n+batch*(i+1), -1] = list(e.map(f, list(map(cubetobox, points[n+batch*i:n+batch*(i+1), 0:-1]))))/fmax
