@@ -40,13 +40,13 @@ def getInitialPoints(box,n):
     return unScalePoints(box,points)
 
 def unScalePoint(box,point):
-    return [box[i][0]+(box[i][1]-box[i][0])*point[i] for i in range(d)]
+    return [box[i][0]+(box[i][1]-box[i][0])*point[i] for i in range(len(box))]
 
 def unScalePoints(box,points):
     return [unScalePoint(box, point) for point in points]
 
 def ScalePoint(box,point):
-    return [(point[i] - box[i][0]) / (box[i][1]-box[i][0])  for i in range(d)]
+    return [(point[i] - box[i][0]) / (box[i][1]-box[i][0])  for i in range(len(box))]
 
 def ScalePoints(box,points):
     return [ScalePoint(box, point) for point in points]
@@ -55,8 +55,13 @@ def ScalePoints(box,points):
 def default_break_checker(*args):
     return False
 
+def getBox(points):
+    return([[np.min(points[:,i]),np.max(points[:,i])] for i in range(len(points[0]))])
+
 
 def getFit(points,nrand=10000,nrand_frac=0.05):
+
+    nrand = int(nrand)
     # Get the dimension of the data
     d = len(points[0]) - 1
 
@@ -303,3 +308,122 @@ def rbf(points, T):
         return sum(lam[i]*phi(np.linalg.norm(np.dot(T, np.subtract(x, points[i, 0:-1])))) for i in range(n)) + np.dot(b, x) + a
 
     return fit
+
+def runInit(args):
+    if len(args) < 6:
+        print("Not enough arguments! The command should look like:")
+        print("blackbox.py init N out_filename xmin xmax (ymin ymax)...") 
+        exit(1)
+    if len(args) % 2 == 1:
+        print("Not the right number of arguments! The command should look like:")
+        print("blackbox.py init N out_filename xmin xmax (ymin ymax)...") 
+        print("Make sure that you have both a lower and upper bound for each dimension.")
+        sys.exit(1)
+
+    rawbox = []
+    for i in range(len(args) - 4):
+        try:
+            rawbox.append(float(args[i+4]))
+        except ValueError:
+            print(args[i+4] +" doesn't look like a float to me...")
+            exit(1)
+
+    box = [[rawbox[2 * i], rawbox[2 * i + 1]] for i in range(len(rawbox) / 2)]
+
+    try:
+        N = int(args[2])
+    except ValueError:
+        print(args[2] + "doesn't look like an integer to me.")
+        exit(1)
+
+    points = getInitialPoints(box, N)
+    fname = args[3]
+
+    header = " ".join(["Param" + str(i+1) for i in range(len(box))])
+    np.savetxt(fname,points,header=header)
+
+    pass
+
+def runNext(args):
+    p = None
+    rho0 = None
+    nrand = None
+    nrand_frac = None
+    optParams = {'p': p, 'rho': rho0, 'nrand': nrand, 'randfrac': nrand_frac}
+
+    if len(args) < 5:
+        print("Not enough arguments! The command should look like ")
+        print("blackbox.py next N in_filename out_filename (params)")
+        exit(1)
+
+    try:
+        N = int(args[2])
+    except ValueError:
+        print(args[2] + "doesn't look like an integer to me.")
+        exit(1)
+
+    infname = args[3]
+    outfname = args[4]
+
+    if len(args) % 2 == 0:
+        print("Incorrect number of arguments! Each optional param should have both a name and a value.")
+        exit(1)
+
+
+    for i in range((len(args) - 5) / 2):
+        if args[5 + 2 *i] in optParams:
+            optParams[args[5 + 2 *i]] = float(args[6 + 2 *i])
+        else:
+            print(args[5 + 2 * i] + "isn't a parameter that I recognize! Please try something else.")
+            exit(1)
+
+    inpoints = np.loadtxt(infname)
+
+    box = getBox(inpoints[:,:-1])
+
+    inpoints[:,:-1] = ScalePoints(box, inpoints[:,:-1])
+
+    if optParams['nrand'] == None:
+        if optParams['randfrac'] == None:
+            fit = getFit(inpoints)
+        else:
+            fit = getFit(inpoints,nrand_frac = optParams['randfrac'])
+    else:
+        if optParams['randfrac'] == None:
+            fit = getFit(inpoints,nrand = optParams['nrand'])
+        else:
+            fit = getFit(inpoints,nrand = optParams['nrand'],nrand_frac = optParams['randfrac'])
+
+    if optParams['p'] == None:
+        if optParams['rho'] == None:
+            points, newpoints = getNewPoints(fit,inpoints,N)
+        else:
+            points, newpoints = getNewPoints(fit,inpoints,N,rho0 = optParams['rho'])
+    else:
+        if optParams['rho'] == None:
+            points, newpoints = getNewPoints(fit,inpoints,N,p=optParams['p'])
+        else:
+            points, newpoints = getNewPoints(fit,inpoints,N,rho0 = optParams['rho'],p=optParams['p'])
+
+    newpoints = unScalePoints(box,newpoints)
+
+    header = " ".join(["Param" + str(i+1) for i in range(len(newpoints[0]))])
+    np.savetxt(outfname, newpoints,header=header)
+
+    pass
+
+if __name__ == '__main__':
+
+    commands = {'init': runInit, 'next': runNext}
+
+    if len(sys.argv) == 1:
+        print("No arguments provided, so I'm not sure what you want me to do.")
+        exit(1)
+    else:
+        command = sys.argv[1]
+
+    if command in commands:
+        commands[command](sys.argv)
+    else:
+        print("I don't recognize that command! Please try something else.")
+        exit(1)
