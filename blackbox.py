@@ -88,6 +88,39 @@ def getFit(points,nrand=10000,nrand_frac=0.05):
     # Fit given the spatial rescaling
     return(rbf(points,T))
 
+def getNewPoints(fit,currentPoints,batch,rho0):
+
+    N  = len(currentPoints)
+    d  = len(currentPoints[0]) - 1
+
+    currentPoints = np.append(currentPoints, np.zeros((batch, d+1)), axis=0)
+
+    v1 = getBallVolume(d)
+
+    for j in range(batch):
+        r = ((rho0*((j + 1.) / (batch))**p)/(v1*(N+j)))**(1./d)
+        cons = [{'type': 'ineq', 'fun': lambda x, localk=k: np.linalg.norm(np.subtract(x, currentPoints[localk, 0:-1])) - r}
+                for k in range(N+j)]
+        while True:
+            minfit = op.minimize(fit, np.random.rand(d), method='SLSQP', bounds=[[0., 1.]]*d, constraints=cons)
+            if np.isnan(minfit.x)[0] == False:
+                break
+        currentPoints[N+j, 0:-1] = np.copy(minfit.x)
+
+    newPoints = currentPoints[N:,0:-1]
+
+    return(currentPoints,newPoints)
+
+def getBallVolume(d):
+    # volume of d-dimensional ball (r = 1)
+    if d % 2 == 0:
+        return(np.pi**(d/2)/np.math.factorial(d/2))
+    else:
+        return(2*(4*np.pi)**((d-1)/2)*np.math.factorial((d-1)/2)/np.math.factorial(d))
+
+
+
+
 def search(f, box, n, m, batch, resfile,
            rho0=0.5, p=1.0, nrand=10000, nrand_frac=0.05,
            executor=get_default_executor(), breakCheckFn=default_break_checker):
@@ -149,10 +182,7 @@ def search(f, box, n, m, batch, resfile,
     points[:, -1] = points[:, -1]/fmax
 
     # volume of d-dimensional ball (r = 1)
-    if d % 2 == 0:
-        v1 = np.pi**(d/2)/np.math.factorial(d/2)
-    else:
-        v1 = 2*(4*np.pi)**((d-1)/2)*np.math.factorial((d-1)/2)/np.math.factorial(d)
+    v1 = getBallVolume(d)
 
     # subsequent iterations (current subsequent iteration = i*batch+j)
 
@@ -169,17 +199,7 @@ def search(f, box, n, m, batch, resfile,
         prevFit = fit
         prevFmax = fmax
 
-        points = np.append(points, np.zeros((batch, d+1)), axis=0)
-
-        for j in range(batch):
-            r = ((rho0*((j + 1.) / (batch))**p)/(v1*(n+i*batch+j)))**(1./d)
-            cons = [{'type': 'ineq', 'fun': lambda x, localk=k: np.linalg.norm(np.subtract(x, points[localk, 0:-1])) - r}
-                    for k in range(n+i*batch+j)]
-            while True:
-                minfit = op.minimize(fit, np.random.rand(d), method='SLSQP', bounds=[[0., 1.]]*d, constraints=cons)
-                if np.isnan(minfit.x)[0] == False:
-                    break
-            points[n+i*batch+j, 0:-1] = np.copy(minfit.x)
+        points, newpoints = getNewPoints(fit,points,batch,rho0)
 
         with executor() as e:
             points[n+batch*i:n+batch*(i+1), -1] = list(e.map(f, list(map(cubetobox, points[n+batch*i:n+batch*(i+1), 0:-1]))))/fmax
