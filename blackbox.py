@@ -172,7 +172,7 @@ def search(f, box, n, m, batch, resfile,
         points = np.append(points, np.zeros((batch, d+1)), axis=0)
 
         for j in range(batch):
-            r = ((rho0*((m-1.-(i*batch+j))/(m-1.))**p)/(v1*(n+i*batch+j)))**(1./d)
+            r = ((rho0*((j + 1.) / (batch))**p)/(v1*(n+i*batch+j)))**(1./d)
             cons = [{'type': 'ineq', 'fun': lambda x, localk=k: np.linalg.norm(np.subtract(x, points[localk, 0:-1])) - r}
                     for k in range(n+i*batch+j)]
             while True:
