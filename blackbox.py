@@ -2,7 +2,7 @@ import sys
 import multiprocessing as mp
 import numpy as np
 import scipy.optimize as op
-
+import copy
 
 def get_default_executor():
     """
@@ -59,7 +59,8 @@ def getBox(points):
     return([[np.min(points[:,i]),np.max(points[:,i])] for i in range(len(points[0]))])
 
 
-def getFit(points,nrand=10000,nrand_frac=0.05):
+def getFit(inpoints,nrand=10000,nrand_frac=0.05):
+    points = copy.deepcopy(inpoints)
 
     nrand = int(nrand)
     # Get the dimension of the data
@@ -91,7 +92,7 @@ def getFit(points,nrand=10000,nrand_frac=0.05):
         T = T/np.linalg.norm(T)
 
     # Fit given the spatial rescaling
-    return(rbf(points,T))
+    return(copy.deepcopy(rbf(points,T)))
 
 def getNewPoints(fit,currentPoints,batch,rho0=0.5,p=1.0):
 
@@ -173,6 +174,9 @@ def search(f, box, n, m, batch, resfile,
     def cubetobox(x):
         return [box[i][0]+(box[i][1]-box[i][0])*x[i] for i in range(d)]
 
+    def boxtocube(x):
+        return [(x[i] - box[i][0])/(box[i][1]-box[i][0]) for i in range(d)]
+
     # generating latin hypercube
     points = np.zeros((n, d+1))
     points[:, 0:-1] = latin(n, d)
@@ -218,7 +222,7 @@ def search(f, box, n, m, batch, resfile,
     np.savetxt(resfile, points, delimiter=',', fmt=' %+1.4e', header=''.join(labels), comments='')
 
     def returnedScaleFit(x):
-        return fmax * fit(cubetobox(x))
+        return fmax * fit(boxtocube(x))
 
     return points, returnedScaleFit
 
