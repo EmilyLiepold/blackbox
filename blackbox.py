@@ -3,6 +3,7 @@ import multiprocessing as mp
 import numpy as np
 import scipy.optimize as op
 import copy
+import blackboxhelper as bbh
 
 def get_default_executor():
     """
@@ -199,9 +200,12 @@ def search(f, box, n, m, batch, resfile,
 
         fit = getFit(points,nrand=nrand,nrand_frac=nrand_frac)
 
+        ## Plot if you want to
+        bbh.plotFit(fit,points,fmax,resfile + '.' + str(i) +  '.png')
+
         # check if the current fit is sufficiently converged.
         if i > 0:
-            if breakCheckFn(fit, prevFit, fmax, prevFmax):
+            if breakCheckFn(fit, prevFit, fmax, prevFmax,d):
                 break
 
         # store the current fit for use in the next iteration
@@ -309,7 +313,27 @@ def rbf(points, T):
     lam, b, a = sol[0:n], sol[n:n+d], sol[n+d]
 
     def fit(x):
-        return sum(lam[i]*phi(np.linalg.norm(np.dot(T, np.subtract(x, points[i, 0:-1])))) for i in range(n)) + np.dot(b, x) + a
+        if x is not np.ndarray:
+            x = np.asarray(x)
+        if len(x.shape) == 1:
+            x = x[np.newaxis,:]
+        ## x[N,d]
+        sub = np.empty((x.shape[0],points.shape[0],points.shape[1]-1))
+        ## sub[N,M,d]
+        for ii in range(len(points[:,0])):
+            sub[:,ii,:] = np.subtract(x[:,:],points[ii,0:-1])
+
+        ## T[d,d]
+        A = np.einsum('ji,kli',T,sub)
+        ## A[d,N,M]
+        S = np.einsum('ijk,ijk->jk',A,A)
+        # S = np.sum(np.multiply(A,A),axis=0)
+        ## S[N,M]
+        P = np.power(S,1.5)
+        ## lam[M]
+        Q = np.einsum('i,ji',lam,P)
+        ## Q[N]
+        return Q+ np.einsum('i,ji',b,x) + a
 
     return fit
 
