@@ -2,6 +2,7 @@ import numpy
 import matplotlib.pyplot as plt
 from scipy.optimize import fmin
 import time
+import blackbox as bb
 
 def areaFromPath(vs):
     a = 0
@@ -165,9 +166,12 @@ def checkForConvergenceIntegration(fit,prevFit,fmax,prevFmax,d):
 
 
 def plotFit(fit,points,fmax,fname):
-    if len(points[0]) > 3:
-        print 'Sorry, you have too many dimensions to plot nicely...'
+    if len(points[0]) != 3:
+        print 'Sorry, I only know how to do 2D plots right now'
         return -1
+
+    bounds = bb.getBox(points[:,:-1])
+    extent = [y for x in bounds for y in x]
 
     d = len(points[0]) - 1
 
@@ -178,7 +182,7 @@ def plotFit(fit,points,fmax,fname):
         params = numpy.zeros(d)
         ileft = i * 1
         for j in range(d):
-            params[j] = ((ileft % n) / (n - 1.0))
+            params[j] = ((ileft % n) / (n - 1.0)) * (bounds[j][1] - bounds[j][0]) + bounds[j][0]
             ileft = (ileft - ileft % n) / n
         return params
 

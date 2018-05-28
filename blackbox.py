@@ -57,10 +57,29 @@ def default_break_checker(*args):
     return False
 
 def getBox(points):
-    return([[np.min(points[:,i]),np.max(points[:,i])] for i in range(len(points[0]))])
+    return(np.asarray([[np.min(points[:,i]),np.max(points[:,i])] for i in range(len(points[0]))]))
 
 
-def getFit(inpoints,nrand=10000,nrand_frac=0.05):
+def getFit(inpoints,nrand=10000,nrand_frac=0.05,scaled=True):
+    if scaled:
+        box = getBox(inpoints[:,:-1])
+        ScaledPoints = copy.deepcopy(inpoints)
+        ScaledPoints[:,:-1] = ScalePoints(box, inpoints[:,:-1])
+
+        fmax = max(abs(ScaledPoints[:, -1]))
+        ScaledPoints[:, -1] = ScaledPoints[:, -1]/fmax
+
+        fit = getFit(ScaledPoints,nrand=nrand, nrand_frac=nrand_frac,scaled=False)
+
+        def boxtocube(x):
+            return np.divide(np.subtract(x,box[:,0]),np.subtract(box[:,1],box[:,0]))
+            # return [(x[i] - box[i][0])/(box[i][1]-box[i][0]) for i in range(len(inpoints[0]) - 1)]
+
+        def returnedScaleFit(x):
+            return fmax * fit(boxtocube(x))
+
+        return returnedScaleFit
+
     points = copy.deepcopy(inpoints)
 
     nrand = int(nrand)
@@ -130,7 +149,7 @@ def getBallVolume(d):
 
 def search(f, box, n, m, batch, resfile,
            rho0=0.5, p=1.0, nrand=10000, nrand_frac=0.05,
-           executor=get_default_executor(), breakCheckFn=default_break_checker):
+           executor=get_default_executor(), breakCheckFn=default_break_checker,plot=False):
     """
     Minimize given expensive black-box function and save results into text file.
 
@@ -201,7 +220,8 @@ def search(f, box, n, m, batch, resfile,
         fit = getFit(points,nrand=nrand,nrand_frac=nrand_frac)
 
         ## Plot if you want to
-        bbh.plotFit(fit,points,fmax,resfile + '.' + str(i) +  '.png')
+        if plot:
+            bbh.plotFit(fit,points,fmax,resfile + '.' + str(i) +  '.png')
 
         # check if the current fit is sufficiently converged.
         if i > 0:
