@@ -83,6 +83,7 @@ def getFit(inpoints,nrand=10000,nrand_frac=0.05,scaled=True):
     points = copy.deepcopy(inpoints)
 
     nrand = int(nrand)
+
     # Get the dimension of the data
     d = len(points[0]) - 1
 
@@ -97,9 +98,8 @@ def getFit(inpoints,nrand=10000,nrand_frac=0.05,scaled=True):
         fit_noscale = rbf(points, np.identity(d))
 
         # Construct a space of random points and calculate the fit at those points.
-        population = np.zeros((nrand, d+1))
-        population[:, 0:-1] = np.random.rand(nrand, d)
-        population[:, -1] = list(map(fit_noscale, population[:, 0:-1]))
+        population = np.random.rand(nrand, d+1)
+        population[:, -1] = fit_noscale(population[:,:-1])
 
         # Grab ths points with the smallest fit values.
         cloud = population[population[:, -1].argsort()][0:int(nrand*nrand_frac), 0:-1]
@@ -112,7 +112,7 @@ def getFit(inpoints,nrand=10000,nrand_frac=0.05,scaled=True):
         T = T/np.linalg.norm(T)
 
     # Fit given the spatial rescaling
-    return(copy.deepcopy(rbf(points,T)))
+    return(rbf(points,T))
 
 def getNewPoints(fit,currentPoints,batch,rho0=0.5,p=1.0):
 
@@ -314,7 +314,15 @@ def rbf(points, T):
     def phi(r):
         return r*r*r
 
-    Phi = [[phi(np.linalg.norm(np.dot(T, np.subtract(points[i, 0:-1], points[j, 0:-1])))) for j in range(n)] for i in range(n)]
+    sub = np.diagonal(np.subtract.outer(points[:,0:-1],points[:,0:-1]),axis1=1,axis2=3)
+
+    A = np.einsum('ji,kli',T,sub)
+    ## A[d,N,N] 
+
+    S = np.einsum('ijk,ijk->jk',A,A)
+    ## S[N,N]
+
+    Phi = np.sqrt(np.multiply(S,np.multiply(S,S)))
 
     P = np.ones((n, d+1))
     P[:, 0:-1] = points[:, 0:-1]
@@ -347,9 +355,8 @@ def rbf(points, T):
         A = np.einsum('ji,kli',T,sub)
         ## A[d,N,M]
         S = np.einsum('ijk,ijk->jk',A,A)
-        # S = np.sum(np.multiply(A,A),axis=0)
         ## S[N,M]
-        P = np.power(S,1.5)
+        P = np.sqrt(np.multiply(S,np.multiply(S,S)))
         ## lam[M]
         Q = np.einsum('i,ji',lam,P)
         ## Q[N]
