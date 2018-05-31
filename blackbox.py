@@ -37,47 +37,88 @@ def get_default_executor():
         return Pool
 
 def getInitialPoints(box,n):
+    # box is a list of [minimumValue, maximumValue] for each dimension.
+    # It should have shape (d,2)
+    # n is the number of initial points which you would like.
+    # 
+    # This function will return a list of points with shape (n,d)
+    # Those points will form a latin hypercube such that the 
+    # positions minimize a 1/r potential energy.
+
     points = latin(n,len(box))
     return unScalePoints(box,points)
 
 def unScalePoint(box,point):
+    # This function takes a list with shape (d) describing a single point 
+    # which lies in a unit cube and unscales it to lie within the given box.
+    # We are usually interested in unscaled quantities for doing analysis.
+    
     return [box[i][0]+(box[i][1]-box[i][0])*point[i] for i in range(len(box))]
 
 def unScalePoints(box,points):
+    # This function applies unScalePoint() on a list of points. See 
+    # unScalePoint() for more details
+
     return [unScalePoint(box, point) for point in points]
 
 def ScalePoint(box,point):
+    # This function takes a list with shape (d) describing a point within
+    # the given box and scales it down so that it lies within a unit cube.
+    # Most of the fitting functions and all of the internals of blackbox 
+    # prefer to use these unit-cube quantities.
+
     return [(point[i] - box[i][0]) / (box[i][1]-box[i][0])  for i in range(len(box))]
 
 def ScalePoints(box,points):
+    # This function applies ScalePoint() on a list of point. See 
+    # ScalePoint() for more details.
+
     return [ScalePoint(box, point) for point in points]
 
 
 def default_break_checker(*args):
+    # This function ignores the inputs (the fit function, box, etc) and always
+    # returns False. This is used to turn off convergence checking.
+
     return False
 
 def getBox(points):
+    # This function takes a list of points (either unScaled or Scaled) and 
+    # returns the smallest box which bounds those points. That box will have shape (d,2)
+
     return(np.asarray([[np.min(points[:,i]),np.max(points[:,i])] for i in range(len(points[0]))]))
 
 
-def getFit(inpoints,nrand=10000,nrand_frac=0.05,scaled=True):
-    if scaled:
+def getFit(inpoints,nrand=10000,nrand_frac=0.05,scaled=False):
+    # This function will take a list of points with shape (n,d+1), as well as other parameters
+    # and return an rbf fit to that data.
+
+    # nrand describes the number of points generated for the spatial rescaling
+    # nrand_frac describes the fraction of nrand which is actually used for that rescaling.
+    # scaled is a Boolean which describes whether or not the input points lie in a unit cube.
+
+    # If the data is not scaled, then we will rescale the data and perform getFit on that data
+    if not scaled:
+        # Find the box and Scale the points
         box = getBox(inpoints[:,:-1])
         ScaledPoints = copy.deepcopy(inpoints)
         ScaledPoints[:,:-1] = ScalePoints(box, inpoints[:,:-1])
 
+        # Scale the values at those points
         fmax = max(abs(ScaledPoints[:, -1]))
         ScaledPoints[:, -1] = ScaledPoints[:, -1]/fmax
 
-        fit = getFit(ScaledPoints,nrand=nrand, nrand_frac=nrand_frac,scaled=False)
+        # Perform the fit on this reduced data
+        fit = getFit(ScaledPoints,nrand=nrand, nrand_frac=nrand_frac,scaled=True)
+
 
         def boxtocube(x):
             return np.divide(np.subtract(x,box[:,0]),np.subtract(box[:,1],box[:,0]))
-            # return [(x[i] - box[i][0])/(box[i][1]-box[i][0]) for i in range(len(inpoints[0]) - 1)]
-
+        
         def returnedScaleFit(x):
             return fmax * fit(boxtocube(x))
 
+        # Return a fit with dimensions
         return returnedScaleFit
 
     points = copy.deepcopy(inpoints)
