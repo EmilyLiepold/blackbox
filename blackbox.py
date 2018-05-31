@@ -114,6 +114,37 @@ def getFit(inpoints,nrand=10000,nrand_frac=0.05,scaled=True):
     # Fit given the spatial rescaling
     return(rbf(points,T))
 
+def getNextPoints(inpoints,N , optParams = {'p': None, 'rho': None, 'nrand': None, 'randfrac': None}):
+
+    box = getBox(inpoints[:,:-1])
+
+    inpoints[:,:-1] = ScalePoints(box, inpoints[:,:-1])
+
+    if optParams['nrand'] == None:
+        if optParams['randfrac'] == None:
+            fit = getFit(inpoints)
+        else:
+            fit = getFit(inpoints,nrand_frac = optParams['randfrac'])
+    else:
+        if optParams['randfrac'] == None:
+            fit = getFit(inpoints,nrand = optParams['nrand'])
+        else:
+            fit = getFit(inpoints,nrand = optParams['nrand'],nrand_frac = optParams['randfrac'])
+
+    if optParams['p'] == None:
+        if optParams['rho'] == None:
+            points, newpoints = getNewPoints(fit,inpoints,N)
+        else:
+            points, newpoints = getNewPoints(fit,inpoints,N,rho0 = optParams['rho'])
+    else:
+        if optParams['rho'] == None:
+            points, newpoints = getNewPoints(fit,inpoints,N,p=optParams['p'])
+        else:
+            points, newpoints = getNewPoints(fit,inpoints,N,rho0 = optParams['rho'],p=optParams['p'])
+
+    return(unScalePoints(box,newpoints))
+
+
 def getNewPoints(fit,currentPoints,batch,rho0=0.5,p=1.0):
 
     N  = len(currentPoints)
@@ -434,33 +465,7 @@ def runNext(args):
 
     inpoints = np.loadtxt(infname)
 
-    box = getBox(inpoints[:,:-1])
-
-    inpoints[:,:-1] = ScalePoints(box, inpoints[:,:-1])
-
-    if optParams['nrand'] == None:
-        if optParams['randfrac'] == None:
-            fit = getFit(inpoints)
-        else:
-            fit = getFit(inpoints,nrand_frac = optParams['randfrac'])
-    else:
-        if optParams['randfrac'] == None:
-            fit = getFit(inpoints,nrand = optParams['nrand'])
-        else:
-            fit = getFit(inpoints,nrand = optParams['nrand'],nrand_frac = optParams['randfrac'])
-
-    if optParams['p'] == None:
-        if optParams['rho'] == None:
-            points, newpoints = getNewPoints(fit,inpoints,N)
-        else:
-            points, newpoints = getNewPoints(fit,inpoints,N,rho0 = optParams['rho'])
-    else:
-        if optParams['rho'] == None:
-            points, newpoints = getNewPoints(fit,inpoints,N,p=optParams['p'])
-        else:
-            points, newpoints = getNewPoints(fit,inpoints,N,rho0 = optParams['rho'],p=optParams['p'])
-
-    newpoints = unScalePoints(box,newpoints)
+    newpoints =  getNextPoints(inpoints, N,optParams)
 
     header = " ".join(["Param" + str(i+1) for i in range(len(newpoints[0]))])
     np.savetxt(outfname, newpoints,header=header)
