@@ -4,6 +4,8 @@ import numpy as np
 import scipy.optimize as op
 import copy
 import blackboxhelper as bbh
+import utils as u
+
 
 def get_default_executor():
     """
@@ -512,6 +514,54 @@ def runNext(args):
     np.savetxt(outfname, newpoints,header=header)
 
     pass
+
+def runAnalysis(args):
+
+    if len(args) < 3:
+        print("Not enough arguments! The command should look like ")
+        print("blackbox.py analyze in_filename (params)")
+        exit(1)
+
+    infname = args[2]
+    inpoints = np.loadtxt(infname)
+    box = getBox(inpoints[:,:-1])
+    inpoints[:,:-1] = ScalePoints(box, inpoints[:,:-1])
+
+    plot = False
+    plotfn = infname + ".png"
+
+    if args[3] = "plot":
+        plot = True
+        if len(args) > 4:
+            plotfn = args[4]
+
+    d = len(inpoints[0]) - 1
+
+    labelarg = 0
+    foundLabel = False
+    if args[3] == "label":
+        labelarg = 3
+        foundLabel = True
+    if args[5] == "label":
+        labelarg = 5
+        foundLabel = True
+
+    if foundLabel:
+        if len(args) < labelarg + d + 1:
+            print("I can't find enough labels! Make sure that your number of labels matches the number of dimensions!")
+            foundLabel = False
+        else:
+            labels = args[(labelarg + 1):(labelarg + d + 1)]
+
+    fit = getFit(inpoints)
+    if foundLabel:
+        u.analyzeFit(fit,box,plot=plot,plotfn=plotfn,labels=labels)
+    else:
+        u.analyzeFit(fit,box,plot=plot,plotfn=plotfn,labels=labels)
+
+    pass
+
+
 
 if __name__ == '__main__':
 
