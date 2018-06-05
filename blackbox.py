@@ -157,58 +157,89 @@ def getFit(inpoints,nrand=10000,nrand_frac=0.05,scaled=False):
     # Fit given the spatial rescaling
     return(rbf(points,T))
 
-def getNextPoints(inpoints,N , optParams = {'p': None, 'rho': None, 'nrand': None, 'randfrac': None}):
+def getNextPoints(inpoints,N, fitkwargs = {}, ptkwargs = {}): #optParams = {'p': None, 'rho': None, 'nrand': None, 'randfrac': None}):
+    ## This function implements the logic required to grab the next set of points using the standard rbf method.
+    ## The required inputs are 
+    ##      inpoints, a list of points with shape (n,d+1), which are the parameters and measured function at n sample points
+    ##      N, which is the number of requested points.
+    ## The optional parameters for the fit should be placed in fitkwargs.
+    ## The optional parameters for the acquisition function should be placed in ptkwargs
 
+    ## The optional parameters are
+    ##      p, which is a float which sets the shape of the search pattern.
+    ##      rho, which is a float which sets the initial ball density
+    ##      nrand, which is an integer which sets the number of points used for the spatial rescaling.
+    ##      randfrac, which is a float which sets the fraction of nrand points which are used for the rescaling.
+
+
+    # Get the shape of the box from the extent of the current points.
     box = getBox(inpoints[:,:-1])
 
+    # Scale the points into a unit cube
     inpoints[:,:-1] = ScalePoints(box, inpoints[:,:-1])
 
-    if optParams['nrand'] == None:
-        if optParams['randfrac'] == None:
-            fit = getFit(inpoints)
-        else:
-            fit = getFit(inpoints,nrand_frac = optParams['randfrac'])
-    else:
-        if optParams['randfrac'] == None:
-            fit = getFit(inpoints,nrand = optParams['nrand'])
-        else:
-            fit = getFit(inpoints,nrand = optParams['nrand'],nrand_frac = optParams['randfrac'])
+    # Accumulate the parameters for the fit and perform the fit
+    # fitkwargs = {}
+    # if optParams['nrand'] is not None: fitkwargs['nrand'] = optParams['nrand']
+    # if optParams['randfrac'] is not None: fitkwargs['nrand_frac'] = optParams['randfrac']
 
-    if optParams['p'] == None:
-        if optParams['rho'] == None:
-            points, newpoints = getNewPoints(fit,inpoints,N)
-        else:
-            points, newpoints = getNewPoints(fit,inpoints,N,rho0 = optParams['rho'])
-    else:
-        if optParams['rho'] == None:
-            points, newpoints = getNewPoints(fit,inpoints,N,p=optParams['p'])
-        else:
-            points, newpoints = getNewPoints(fit,inpoints,N,rho0 = optParams['rho'],p=optParams['p'])
+    fit = getFit(inpoints, **fitkwargs)
 
+    # Accumulate the keywords for the getNewPoints function and run that.
+    # ptkwargs = {}
+    # if optParams['p'] is not None: ptkwargs['p'] = optParams['p']
+    # if optParams['rho'] is not None: fitkwargs['rho0'] = optParams['rho']
+
+    points, newpoints = getNewPoints(fit,inpoints,N, **ptkwargs)
+
+    # Return the unScaled points (with dimensions)
     return(unScalePoints(box,newpoints))
 
 
 def getNewPoints(fit,currentPoints,batch,rho0=0.5,p=1.0):
+    ## This function performs the logic of getting new points from the provided fit and existing points.
+    ## The basic logic here follows CORS.
+    ## fit should be a function which will take in a list of parameters and return a number.
+    ## currentPoints should be a numpy array with shape (N,d+1) where N is the number of currently existing points.
+    ## batch should be an integer which is the number of new points to choose.
+
+    ## We will return a pair of arrays.
+    ## currentPoints will be identical to the input currentPoints, but its shape is (N+batch,d+1) and the last column 
+    ##      for the new points will be 0.
+    ## newPoints will be (batch,d) and will be the submatrix of currentPoints describing the new positions.
 
     N  = len(currentPoints)
     d  = len(currentPoints[0]) - 1
 
+    # Make space for the new points.
     currentPoints = np.append(currentPoints, np.zeros((batch, d+1)), axis=0)
 
+    # Get the volume of a d-dimensional unit sphere.
     v1 = getBallVolume(d)
 
+    # Loop through the new points
     for j in range(batch):
+
+        # Calculate the minimum distance between the new point and any other existing point.
         r = ((rho0*((j + 1.) / (batch))**p)/(v1*(N+j)))**(1./d)
+
+        # Establish constraints on the new position by requiring it to be greater than 'r' away from all existing points.
         cons = [{'type': 'ineq', 'fun': lambda x, localk=k: np.linalg.norm(np.subtract(x, currentPoints[localk, 0:-1])) - r}
                 for k in range(N+j)]
+
+        # Minimize the fit function under those constraints.
         while True:
             minfit = op.minimize(fit, np.random.rand(d), method='SLSQP', bounds=[[0., 1.]]*d, constraints=cons)
             if np.isnan(minfit.x)[0] == False:
                 break
+
+        # Move the minimized locations into the currentPoints array.
         currentPoints[N+j, 0:-1] = np.copy(minfit.x)
 
+    # Split off the newPoints array
     newPoints = currentPoints[N:,0:-1]
 
+    # Return those arrays
     return(currentPoints,newPoints)
 
 def getBallVolume(d):
