@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 
 
 
-def analyzeFit(fit,box,plot=True,plotfn='fit.png',labels=None,searchRange = None,searchFraction=0.2):
+def analyzeFit(fit,box,plot=True,showPlot=False,plotfn='fit.png',labels=None,searchRange = None,searchFraction=0.2,extent=None):
 
 	if searchRange == None:
 		try:
@@ -25,7 +25,7 @@ def analyzeFit(fit,box,plot=True,plotfn='fit.png',labels=None,searchRange = None
 			paramMax = min(func_min[i] + paramRanges[i],box[i][1])
 			searchRange.append([paramMin,paramMax])
 
-		searchRange = np.asarray(searchRange)
+	searchRange = np.asarray(searchRange)
 
 
 	d = len(box)
@@ -36,6 +36,10 @@ def analyzeFit(fit,box,plot=True,plotfn='fit.png',labels=None,searchRange = None
 
 
 	axisLists = [np.linspace(s[0],s[1],n) for s in searchRange]
+
+	if extent != None:
+		for i in range(len(axisLists)):
+			axisLists[i] = np.add(np.multiply(axisLists[i],np.subtract(extent[-i-1][1], extent[-i-1][0])),extent[-i-1][0])
 
 	def gridder(X):
 	    params = np.zeros(d)
@@ -83,15 +87,16 @@ def analyzeFit(fit,box,plot=True,plotfn='fit.png',labels=None,searchRange = None
 		fig.subplots_adjust(hspace=0.,wspace=0.)
 		axes[-1,0].set_visible(False)
 		plt.savefig(plotfn)
+		if showPlot:
+			plt.show()
 		plt.close()
 
 
-	bestFits = [bestValFromPDF(marginalizePDF(pF,[i,i]),axisLists[i]) for i in range(d)]
-
+	bestFits = np.asarray([bestValFromPDF(marginalizePDF(pF,[i,i]),axisLists[i]) for i in range(d)])
 
 	rerunParams = []
 	for i in range(d):
-		if (searchRange[i,0] > bestFits[i][0] - 3 * bestFits[i][1]) or (searchRange[i,1] < bestFits[i][0] + 3 * bestFits[i][1]):
+		if (searchRange[i,0] > bestFits[i,0] - 3 * bestFits[i,1]) or (searchRange[i,1] < bestFits[i,0] + 3 * bestFits[i,1]):
 			if not np.array_equal(np.asarray(searchRange)[i],np.asarray(box)[i]):
 				rerunParams.append(i)
 
@@ -100,7 +105,7 @@ def analyzeFit(fit,box,plot=True,plotfn='fit.png',labels=None,searchRange = None
 
 		for i in rerunParams:
 			newsearchFraction[i] *= 2
-		return analyzeFit(fit,box,plot=plot,plotfn=plotfn,labels=labels,searchRange = None,searchFraction = newsearchFraction)
+		return analyzeFit(fit,box,plot=plot,plotfn=plotfn,labels=labels,searchRange = None,searchFraction = newsearchFraction,extent=extent)
 
 	return bestFits
 

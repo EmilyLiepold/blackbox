@@ -530,7 +530,7 @@ def runAnalysis(args):
     plot = False
     plotfn = infname + ".png"
 
-    if args[3] = "plot":
+    if args[3] == "plot":
         plot = True
         if len(args) > 4:
             plotfn = args[4]
