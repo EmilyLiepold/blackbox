@@ -143,8 +143,8 @@ def analyzeFit(fit,box,plot=True,showPlot=False,plotfn='fit.png',labels=None,sea
 		axes[-1,0].set_visible(False)
 		plt.savefig(plotfn)
 		# print showPlot
-		# if showPlot:
-		plt.show()
+		if showPlot:
+			plt.show()
 		plt.close()
 
 	return bestFits
