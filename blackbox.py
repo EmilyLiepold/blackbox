@@ -5,7 +5,7 @@ import scipy.optimize as op
 import copy
 import blackboxhelper as bbh
 import utils as u
-
+from skopt import Optimizer
 
 def get_default_executor():
     """
@@ -91,7 +91,7 @@ def getBox(points):
     return(np.asarray([[np.min(points[:,i]),np.max(points[:,i])] for i in range(len(points[0]))]))
 
 
-def getFit(inpoints,nrand=10000,nrand_frac=0.05,scaled=False):
+def getFit(inpoints,nrand=10000,nrand_frac=0.05,scaled=False,method='rbf'):
     # This function will take a list of points with shape (n,d+1), as well as other parameters
     # and return an rbf fit to that data.
 
@@ -100,6 +100,9 @@ def getFit(inpoints,nrand=10000,nrand_frac=0.05,scaled=False):
     # scaled is a Boolean which describes whether or not the input points lie in a unit cube.
 
     # If the data is not scaled, then we will rescale the data and perform getFit on that data
+
+    if method == 'bayes':
+        return(getFitBayes(inpoints))
     if not scaled:
         # Find the box and Scale the points
         box = getBox(inpoints[:,:-1])
@@ -157,7 +160,53 @@ def getFit(inpoints,nrand=10000,nrand_frac=0.05,scaled=False):
     # Fit given the spatial rescaling
     return(rbf(points,T))
 
-def getNextPoints(inpoints,N, fitkwargs = {}, ptkwargs = {}): #optParams = {'p': None, 'rho': None, 'nrand': None, 'randfrac': None}):
+def getFitBayes(inpoints):
+
+    # Rescale the data into the unit cube
+    box = getBox(inpoints[:,:-1])
+    inpoints[:,:-1] = ScalePoints(box, inpoints[:,:-1])
+
+    # Rescale the data to be order unity
+    fmax = np.max(np.abs(inpoints[:,-1]))
+    inpoints[:,-1] = inpoints[:,-1] / fmax
+
+    # Construct the bounds of the unit box
+    dimensions = [(0.,1) for i in range(len(box))]
+
+    # Construct the GP optimizer with the LCB acquisition function
+    opt = Optimizer(dimensions, "gp",acq_func='LCB')
+
+    # Tell the optimizer abount inpoints
+    opt.tell(inpoints[:,:-1],inpoints[:,-1])
+
+    # See if we constructed a model
+    if len(opt.models) == 0:
+        print('Could not construct a model for that data! Oh well.')
+        return -1
+    else:
+
+        # If we did, get that model and construct wrappers which can
+        # be returned
+
+        model = opt.models[-1]
+
+        def outFit(x):
+            x = ScalePoints(box,x)
+            x_model = opt.space.transform(x.tolist())
+            y_pred, sigma = model.predict(x_model, return_std=True)
+            return y_pred * fmax
+        def outFitSigma(x):
+            x = ScalePoints(box,x)
+            x_model = opt.space.transform(x.tolist())
+            y_pred, sigma = model.predict(x_model, return_std=True)
+            return sigma * fmax
+
+        return outFit,outFitSigma
+
+
+
+
+def getNextPoints(inpoints,N, fitkwargs = {}, ptkwargs = {},method='rbf'): #optParams = {'p': None, 'rho': None, 'nrand': None, 'randfrac': None}):
     ## This function implements the logic required to grab the next set of points using the standard rbf method.
     ## The required inputs are 
     ##      inpoints, a list of points with shape (n,d+1), which are the parameters and measured function at n sample points
@@ -178,14 +227,42 @@ def getNextPoints(inpoints,N, fitkwargs = {}, ptkwargs = {}): #optParams = {'p':
     # Scale the points into a unit cube
     inpoints[:,:-1] = ScalePoints(box, inpoints[:,:-1])
 
-    # Accumulate the parameters for the fit and perform the fit
-    fit = getFit(inpoints, **fitkwargs)
+    if method == 'rbf':
+        # Accumulate the parameters for the fit and perform the fit
+        fit = getFit(inpoints,method=method, **fitkwargs)
 
-    # Accumulate the keywords for the getNewPoints function and run that.
-    points, newpoints = getNewPoints(fit,inpoints,N, **ptkwargs)
+        # Accumulate the keywords for the getNewPoints function and run that.
+        points, newpoints = getNewPoints(fit,inpoints,N, **ptkwargs)
+
+    elif method == 'bayes':
+        newpoints = getNewPointsBayes(inpoints,N)
+
 
     # Return the unScaled points (with dimensions)
     return(unScalePoints(box,newpoints))
+
+def getNewPointsBayes(inpoints,N):
+
+    # Rescale the data into the unit cube
+    box = getBox(inpoints[:,:-1])
+    inpoints[:,:-1] = ScalePoints(box, inpoints[:,:-1])
+
+    # Rescale the data to be order unity
+    fmax = np.max(np.abs(inpoints[:,-1]))
+    inpoints[:,-1] = inpoints[:,-1] / fmax
+
+    # Construct the bounds of the unit box
+    dimensions = [(0.,1) for i in range(len(box))]
+
+    # Construct the GP optimizer with the LCB acquisition function
+    opt = Optimizer(dimensions, "gp",acq_func='LCB')
+
+    # Tell the optimizer abount inpoints
+    opt.tell(inpoints[:,:-1].tolist(),inpoints[:,-1].tolist())
+
+    newpoints = opt.ask(n_points=N)
+    return newpoints
+
 
 
 def getNewPoints(fit,currentPoints,batch,rho0=0.5,p=1.0):
@@ -589,7 +666,7 @@ def runAnalysis(args):
 
 if __name__ == '__main__':
 
-    commands = {'init': runInit, 'next': runNext}
+    commands = {'init': runInit, 'next': runNext, 'analyze' : runAnalysis}
 
     if len(sys.argv) == 1:
         print("No arguments provided, so I'm not sure what you want me to do.")
