@@ -3,6 +3,11 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 
+def chisqToPDF(chisq,d):
+	fRed = np.exp(-np.divide(np.subtract(chisq,np.min(chisq)),d))
+	return np.divide(fRed,np.sum(fRed))
+
+
 def analyzeFit(fit,box,plot=True,showPlot=False,plotfn='fit.png',labels=None,searchRange = None,searchFraction=0.2,extent=None,PDF_func=chisqToPDF):
 	## This function will take a fit function which is defined over a space defined by box and return the best fit parameters over that space
 	## That fit function must take in a list of lists of parameters with a shape (n,d) and return a list with shape (n).
@@ -147,10 +152,6 @@ def getGridDimensions(N,d):
 	N = int(n**d)
 	return(N,n)
 
-
-def chisqToPDF(chisq,d):
-	fRed = np.exp(-np.divide(np.subtract(chisq,np.min(chisq)),d))
-	return np.divide(fRed,np.sum(fRed))
 
 def marginalizePDF(PDF,remainingAxes):
 	axes = set(range(len(PDF.shape)))
