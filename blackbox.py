@@ -179,17 +179,9 @@ def getNextPoints(inpoints,N, fitkwargs = {}, ptkwargs = {}): #optParams = {'p':
     inpoints[:,:-1] = ScalePoints(box, inpoints[:,:-1])
 
     # Accumulate the parameters for the fit and perform the fit
-    # fitkwargs = {}
-    # if optParams['nrand'] is not None: fitkwargs['nrand'] = optParams['nrand']
-    # if optParams['randfrac'] is not None: fitkwargs['nrand_frac'] = optParams['randfrac']
-
     fit = getFit(inpoints, **fitkwargs)
 
     # Accumulate the keywords for the getNewPoints function and run that.
-    # ptkwargs = {}
-    # if optParams['p'] is not None: ptkwargs['p'] = optParams['p']
-    # if optParams['rho'] is not None: fitkwargs['rho0'] = optParams['rho']
-
     points, newpoints = getNewPoints(fit,inpoints,N, **ptkwargs)
 
     # Return the unScaled points (with dimensions)
@@ -509,7 +501,8 @@ def runNext(args):
     rho0 = None
     nrand = None
     nrand_frac = None
-    optParams = {'p': p, 'rho': rho0, 'nrand': nrand, 'randfrac': nrand_frac}
+    ptkwargs = {'p': p, 'rho0': rho0}
+    fitkwargs = {'nrand': nrand, 'nrand_frac': nrand_frac}
 
     if len(args) < 5:
         print("Not enough arguments! The command should look like ")
@@ -539,7 +532,7 @@ def runNext(args):
 
     inpoints = np.loadtxt(infname)
 
-    newpoints =  getNextPoints(inpoints, N,optParams)
+    newpoints =  getNextPoints(inpoints, N,fitkwargs=fitkwargs,ptkwargs=ptkwargs)
 
     header = " ".join(["Param" + str(i+1) for i in range(len(newpoints[0]))])
     np.savetxt(outfname, newpoints,header=header)
