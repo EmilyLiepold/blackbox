@@ -3,7 +3,6 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 
-
 def analyzeFit(fit,box,plot=True,showPlot=False,plotfn='fit.png',labels=None,searchRange = None,searchFraction=0.2,extent=None):
 
 	if searchRange == None:
