@@ -64,7 +64,9 @@ def analyzeFit(fit,box,plot=True,showPlot=False,plotfn='fit.png',labels=None,sea
 	N,n = getGridDimensions(100000,d)
 
 	# Determine the values which correspond to the points in the grid
-	if extent == None:
+	try:
+		len(extent)
+	except:
 		extent = searchRange[:]
 
 	axisLists = [np.linspace(s[0],s[1],n) for s in extent]
@@ -73,7 +75,7 @@ def analyzeFit(fit,box,plot=True,showPlot=False,plotfn='fit.png',labels=None,sea
 	def gridder(X):
 	    params = np.zeros(d)
 	    ileft = X * 1
-	    for j in range(d):
+	    for j in reversed(range(d)):
 	        params[j] = ((ileft % n) / (n - 1.0)) * (searchRange[j][1] - searchRange[j][0]) + searchRange[j][0]
 	        ileft = (ileft - ileft % n) / n
 	    return params
@@ -109,7 +111,7 @@ def analyzeFit(fit,box,plot=True,showPlot=False,plotfn='fit.png',labels=None,sea
 
 		for i in rerunParams:
 			newsearchFraction[i] *= 2
-		return analyzeFit(fit,box,plot=plot,plotfn=plotfn,labels=labels,searchRange = None,searchFraction = newsearchFraction,extent=extent)
+		return analyzeFit(fit,box,plot=plot,plotfn=plotfn,labels=labels,searchRange = None,searchFraction = newsearchFraction,extent=extent,showPlot=showPlot,PDF_func=PDF_func)
 
 	# If all of the parameters are good and we want to plot, then plot!
 	elif plot:
@@ -140,8 +142,9 @@ def analyzeFit(fit,box,plot=True,showPlot=False,plotfn='fit.png',labels=None,sea
 		fig.subplots_adjust(hspace=0.,wspace=0.)
 		axes[-1,0].set_visible(False)
 		plt.savefig(plotfn)
-		if showPlot:
-			plt.show()
+		# print showPlot
+		# if showPlot:
+		plt.show()
 		plt.close()
 
 	return bestFits

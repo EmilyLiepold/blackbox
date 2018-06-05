@@ -177,7 +177,7 @@ def getFitBayes(inpoints):
     opt = Optimizer(dimensions, "gp",acq_func='LCB')
 
     # Tell the optimizer abount inpoints
-    opt.tell(inpoints[:,:-1],inpoints[:,-1])
+    opt.tell(inpoints[:,:-1].tolist(),inpoints[:,-1].tolist())
 
     # See if we constructed a model
     if len(opt.models) == 0:
@@ -191,17 +191,20 @@ def getFitBayes(inpoints):
         model = opt.models[-1]
 
         def outFit(x):
-            x = ScalePoints(box,x)
+            x = np.asarray(x)
+            if len(x.shape) == 1:
+                x = np.asarray([x])
+            x = np.asarray(ScalePoints(box,x))
             x_model = opt.space.transform(x.tolist())
             y_pred, sigma = model.predict(x_model, return_std=True)
             return y_pred * fmax
-        def outFitSigma(x):
-            x = ScalePoints(box,x)
-            x_model = opt.space.transform(x.tolist())
-            y_pred, sigma = model.predict(x_model, return_std=True)
-            return sigma * fmax
+        # def outFitSigma(x):
+        #     x = ScalePoints(box,x)
+        #     x_model = opt.space.transform(x.tolist())
+        #     y_pred, sigma = model.predict(x_model, return_std=True)
+        #     return sigma * fmax
 
-        return outFit,outFitSigma
+        return outFit#,outFitSigma
 
 
 
@@ -642,35 +645,47 @@ def runAnalysis(args):
 
     plot = False
     plotfn = infname + ".png"
-
-    if args[3] == "plot":
-        plot = True
-        if len(args) > 4:
-            plotfn = args[4]
+    method = 'rbf'
+    foundLabel = False
 
     d = len(inpoints[0]) - 1
 
-    labelarg = 0
-    foundLabel = False
-    if args[3] == "label":
-        labelarg = 3
-        foundLabel = True
-    if args[5] == "label":
-        labelarg = 5
-        foundLabel = True
+    argList = args[3:]
+    for i in range(len(argList)):
+        if argList[i] == 'plot':
+            plot = True
+            continue
+        if argList[i] == 'plotfn':
+            plotfn = argList[i+1]
+            continue
+        if argList[i] == "label":
+            foundLabel == True
+            labels = argList[(i + 1):(i + d + 1)]
+            continue
+        if argList[i] == "bayes":
+            method = 'bayes'
+        if argList[i] == "rbf":
+            method = 'rbf'
 
-    if foundLabel:
-        if len(args) < labelarg + d + 1:
-            print("I can't find enough labels! Make sure that your number of labels matches the number of dimensions!")
-            foundLabel = False
-        else:
-            labels = args[(labelarg + 1):(labelarg + d + 1)]
+    print('Performing a '+method+' style fit')
+    if method == 'rbf':
+        fit = getFit(inpoints)
+        
+    elif method == 'bayes':
+        fit = getFitBayes(inpoints)
 
-    fit = getFit(inpoints)
+    unitbox = np.asarray([[0.,1.],[0.,1.]])
     if foundLabel:
-        u.analyzeFit(fit,box,plot=plot,plotfn=plotfn,labels=labels)
+        BF = u.analyzeFit(fit,unitbox,plot=plot,plotfn=plotfn,labels=labels)
     else:
-        u.analyzeFit(fit,box,plot=plot,plotfn=plotfn,labels=labels)
+        BF = u.analyzeFit(fit,unitbox,plot=plot,plotfn=plotfn)
+
+    box = np.asarray(box)
+    BF = np.asarray(BF)
+    BF[:,0] = unScalePoint(box,BF[:,0])
+    BF[:,1] = np.multiply(BF[:,1],np.subtract(box[:,1],box[:,0]))
+    print BF
+    return BF
 
     pass
 
