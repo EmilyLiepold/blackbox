@@ -578,8 +578,11 @@ def runNext(args):
     rho0 = None
     nrand = None
     nrand_frac = None
-    ptkwargs = {'p': p, 'rho0': rho0}
-    fitkwargs = {'nrand': nrand, 'nrand_frac': nrand_frac}
+    method = 'rbf'
+    allowedParams = ['p', 'rho', 'nrand', 'randfrac', 'method']
+    # optParams = {'p': p, 'rho': rho0, 'nrand': nrand, 'randfrac': nrand_frac, 'method': method}
+    optParams = {}
+
 
     if len(args) < 5:
         print("Not enough arguments! The command should look like ")
@@ -601,15 +604,24 @@ def runNext(args):
 
 
     for i in range((len(args) - 5) / 2):
-        if args[5 + 2 *i] in optParams:
-            optParams[args[5 + 2 *i]] = float(args[6 + 2 *i])
+        if args[5 + 2 *i] in allowedParams:
+            optParams[args[5 + 2 *i]] = (args[6 + 2 *i])
         else:
             print(args[5 + 2 * i] + "isn't a parameter that I recognize! Please try something else.")
             exit(1)
 
     inpoints = np.loadtxt(infname)
 
-    newpoints =  getNextPoints(inpoints, N,fitkwargs=fitkwargs,ptkwargs=ptkwargs)
+    ptkwargs = {}
+    fitkwargs = {}
+    if 'p' in optParams: ptkwargs['p'] = float(optParams['p'])
+    if 'rho' in optParams: ptkwargs['rho0'] = float(optParams['rho'])
+    if 'nrand' in optParams: ptkwargs['nrand_frac'] = float(optParams['nrand'])
+    if 'randfrac' in optParams: ptkwargs['nrand'] = float(optParams['randfrac'])
+    
+    method = optParams['method'] if 'method' in optParams else 'rbf'
+
+    newpoints =  getNextPoints(inpoints, N,fitkwargs=fitkwargs,ptkwargs=ptkwargs, method=method)
 
     header = " ".join(["Param" + str(i+1) for i in range(len(newpoints[0]))])
     np.savetxt(outfname, newpoints,header=header)
