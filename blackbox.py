@@ -39,16 +39,28 @@ def get_default_executor():
         return Pool
 
 def getInitialPoints(box,n):
-    # box is a list of [minimumValue, maximumValue] for each dimension.
-    # It should have shape (d,2)
-    # n is the number of initial points which you would like.
-    # 
-    # This function will return a list of points with shape (n,d)
-    # Those points will form a latin hypercube such that the 
-    # positions minimize a 1/r potential energy.
+    """
+    This function will return a list of points with shape (n,d).
+    Those points will form a latin hypercube such that the 
+    positions minimize a 1/r potential energy.
 
+    Parameters
+    ----------
+    box : List of lists of floats
+          It should contain [minimumValue, maximumValue] for each dimension.
+          It should have shape (d,2)
+    n   : int
+          Number of initial points which you would like.
+
+    Returns
+    -------
+    points : list of lists of floats
+             Array of points uniformly placed in the initial box.
+             In should have shape (n,d)
+    """
+    
     points = latin(n,len(box))
-    return unScalePoints(box,points)
+    return np.asarray(unScalePoints(box,points))
 
 def unScalePoint(box,point):
     # This function takes a list with shape (d) describing a single point 
@@ -91,7 +103,7 @@ def getBox(points):
     return(np.asarray([[np.min(points[:,i]),np.max(points[:,i])] for i in range(len(points[0]))]))
 
 
-def getFit(inpoints,nrand=10000,nrand_frac=0.05,scaled=False,method='rbf'):
+def getFit(inpoints,nrand=10000,nrand_frac=0.05,scaled=False,method='rbf',returnStd=False):
     # This function will take a list of points with shape (n,d+1), as well as other parameters
     # and return an rbf fit to that data.
 
@@ -102,7 +114,7 @@ def getFit(inpoints,nrand=10000,nrand_frac=0.05,scaled=False,method='rbf'):
     # If the data is not scaled, then we will rescale the data and perform getFit on that data
 
     if method == 'bayes':
-        return(getFitBayes(inpoints))
+        return(getFitBayes(copy.deepcopy(inpoints),returnStd=returnStd))
     if not scaled:
         # Find the box and Scale the points
         box = getBox(inpoints[:,:-1])
@@ -160,7 +172,8 @@ def getFit(inpoints,nrand=10000,nrand_frac=0.05,scaled=False,method='rbf'):
     # Fit given the spatial rescaling
     return(rbf(points,T))
 
-def getFitBayes(inpoints):
+def getFitBayes(inpoints,returnStd=False):
+
 
     # Rescale the data into the unit cube
     box = getBox(inpoints[:,:-1])
@@ -198,18 +211,24 @@ def getFitBayes(inpoints):
             x_model = opt.space.transform(x.tolist())
             y_pred, sigma = model.predict(x_model, return_std=True)
             return y_pred * fmax
-        # def outFitSigma(x):
-        #     x = ScalePoints(box,x)
-        #     x_model = opt.space.transform(x.tolist())
-        #     y_pred, sigma = model.predict(x_model, return_std=True)
-        #     return sigma * fmax
+        if returnStd:
+            def outFitSigma(x):
+                x = np.asarray(x)
+                if len(x.shape) == 1:
+                    x = np.asarray([x])
+                x = np.asarray(ScalePoints(box,x))
+                x_model = opt.space.transform(x.tolist())
+                y_pred, sigma = model.predict(x_model, return_std=True)
+                return sigma * fmax
 
-        return outFit#,outFitSigma
+            return outFit, outFitSigma
+        else:
+            return outFit
 
 
 
 
-def getNextPoints(inpoints,N, fitkwargs = {}, ptkwargs = {},method='rbf'): #optParams = {'p': None, 'rho': None, 'nrand': None, 'randfrac': None}):
+def getNextPoints(inpoints,N, fitkwargs = {}, ptkwargs = {},method='rbf',plot=False,plotfn='next'): #optParams = {'p': None, 'rho': None, 'nrand': None, 'randfrac': None}):
     ## This function implements the logic required to grab the next set of points using the standard rbf method.
     ## The required inputs are 
     ##      inpoints, a list of points with shape (n,d+1), which are the parameters and measured function at n sample points
@@ -226,23 +245,35 @@ def getNextPoints(inpoints,N, fitkwargs = {}, ptkwargs = {},method='rbf'): #optP
 
     # Get the shape of the box from the extent of the current points.
     box = getBox(inpoints[:,:-1])
-
     # Scale the points into a unit cube
-    inpoints[:,:-1] = ScalePoints(box, inpoints[:,:-1])
+    
 
     if method == 'rbf':
+        inpoints[:,:-1] = ScalePoints(box, inpoints[:,:-1])
         # Accumulate the parameters for the fit and perform the fit
         fit = getFit(inpoints,method=method, **fitkwargs)
 
         # Accumulate the keywords for the getNewPoints function and run that.
         points, newpoints = getNewPoints(fit,inpoints,N, **ptkwargs)
+        inpoints[:,:-1] = unScalePoints(box, inpoints[:,:-1])
+        if plot:
+            u.plotNewPointsRBF(inpoints,newpoints,plotfn)
+
 
     elif method == 'bayes':
+        # print inpoints
+        inpoints[:,:-1] = ScalePoints(box, inpoints[:,:-1])
         newpoints = getNewPointsBayes(inpoints,N)
+        # print inpoints
+        inpoints[:,:-1] = unScalePoints(box, inpoints[:,:-1])
+        
+        if plot:
+            u.plotNewPointsBayes(inpoints,newpoints,plotfn)
 
 
     # Return the unScaled points (with dimensions)
-    return(unScalePoints(box,newpoints))
+    # return(unScalePoints(box,newpoints))
+    return(newpoints)
 
 def getNewPointsBayes(inpoints,N):
 
@@ -263,7 +294,34 @@ def getNewPointsBayes(inpoints,N):
     # Tell the optimizer abount inpoints
     opt.tell(inpoints[:,:-1].tolist(),inpoints[:,-1].tolist())
 
-    newpoints = opt.ask(n_points=N)
+    # If we have a model constructed, then do an ask-tell loop
+    if len(opt.models) != 0:
+        
+        # Start a list of the points
+        newpoints = []
+
+        # Loop through the desired number of points
+        for i in range(N):
+            # Ask for a point
+            newpoint = np.asarray([opt.ask()])
+
+            # Ask the most recent model about that point
+            newpointVal = opt.models[-1].predict(newpoint)
+
+            # Tell the optimizer about that point
+            opt.tell(newpoint.tolist(),newpointVal.tolist())
+
+            # Add the point to the list.
+            newpoints.append(newpoint)
+
+        # Turn the list into an ndarray and slice off the extraneous dimension
+        newpoints = np.asarray(newpoints)[:,0,:]
+    else:
+        # If we don't have a model, just use the standard method.
+        newpoints = opt.ask(n_points=N)
+
+    inpoints[:,:-1] = unScalePoints(box, inpoints[:,:-1])
+    inpoints[:,-1] = inpoints[:,-1] * fmax
     return newpoints
 
 
@@ -466,7 +524,7 @@ def latin(n, d):
             lh = np.copy(newlh)
             minspread = newspread
 
-    return lh
+    return np.asarray(lh)
 
 
 def rbf(points, T):
@@ -581,6 +639,8 @@ def runNext(args):
     rho0 = None
     nrand = None
     nrand_frac = None
+    plot = False
+    plotfn = ''
     method = 'rbf'
     allowedParams = ['p', 'rho', 'nrand', 'randfrac', 'method']
     # optParams = {'p': p, 'rho': rho0, 'nrand': nrand, 'randfrac': nrand_frac, 'method': method}
@@ -621,10 +681,14 @@ def runNext(args):
     if 'rho' in optParams: ptkwargs['rho0'] = float(optParams['rho'])
     if 'nrand' in optParams: ptkwargs['nrand_frac'] = float(optParams['nrand'])
     if 'randfrac' in optParams: ptkwargs['nrand'] = float(optParams['randfrac'])
-    
+    if 'plot' in optParams:
+        plot = True
+        plotfn = optParams['plot']
+
     method = optParams['method'] if 'method' in optParams else 'rbf'
 
-    newpoints =  getNextPoints(inpoints, N,fitkwargs=fitkwargs,ptkwargs=ptkwargs, method=method)
+
+    newpoints =  getNextPoints(inpoints, N,fitkwargs=fitkwargs,ptkwargs=ptkwargs, method=method,plot=plot,plotfn=plotfn)
 
     header = " ".join(["Param" + str(i+1) for i in range(len(newpoints[0]))])
     np.savetxt(outfname, newpoints,header=header)
@@ -641,8 +705,7 @@ def runAnalysis(args):
     infname = args[2]
     inpoints = np.loadtxt(infname)
     box = getBox(inpoints[:,:-1])
-    inpoints[:,:-1] = ScalePoints(box, inpoints[:,:-1])
-
+    
     plot = False
     plotfn = infname + ".png"
     method = 'rbf'
@@ -659,7 +722,7 @@ def runAnalysis(args):
             plotfn = argList[i+1]
             continue
         if argList[i] == "label":
-            foundLabel == True
+            foundLabel = True
             labels = argList[(i + 1):(i + d + 1)]
             continue
         if argList[i] == "bayes":
@@ -674,16 +737,14 @@ def runAnalysis(args):
     elif method == 'bayes':
         fit = getFitBayes(inpoints)
 
-    unitbox = np.asarray([[0.,1.],[0.,1.]])
+    # unitbox = np.asarray([[0.,1.],[0.,1.]])
     if foundLabel:
-        BF = u.analyzeFit(fit,unitbox,plot=plot,plotfn=plotfn,labels=labels)
+        BF = u.analyzeFit(fit,box,plot=plot,plotfn=plotfn,labels=labels)#,extent=box)
     else:
-        BF = u.analyzeFit(fit,unitbox,plot=plot,plotfn=plotfn)
+        BF = u.analyzeFit(fit,box,plot=plot,plotfn=plotfn)
 
-    box = np.asarray(box)
     BF = np.asarray(BF)
-    BF[:,0] = unScalePoint(box,BF[:,0])
-    BF[:,1] = np.multiply(BF[:,1],np.subtract(box[:,1],box[:,0]))
+    
     print BF
     return BF
 
