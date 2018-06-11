@@ -69,16 +69,6 @@ def analyzeFit(fit,box,plot=True,showPlot=False,plotfn='fit',labels=None,searchR
 	d = len(box)
 	N,n = getGridDimensions(100000,d)
 
-	# Determine the values which correspond to the points in the grid
-	# try:
-	# 	len(extent)
-	# 	realBounds = extent[:]
-	# 	for i in range(len(extent)):
-	# 		for ii in range(2):
-	# 			realBounds[i][ii] = extent[i][0] + searchRange[i][ii] * (extent[i][1] - extent[i][0])
-	# except:
-	# 	realBounds = searchRange[:]
-
 	axisLists = [np.linspace(s[0],s[1],n) for s in searchRange]
 	
 
@@ -169,6 +159,7 @@ def analyzeFit(fit,box,plot=True,showPlot=False,plotfn='fit',labels=None,searchR
 					chisqIm = PDFtoChisq(dist,d)
 					axeschisq[d-ii-1,d-jj].imshow(np.flipud(chisqIm),extent=(min(axisLists[jj]),max(axisLists[jj]),min(axisLists[ii]),max(axisLists[ii])), aspect='auto',vmin=np.min(chisqIm),vmax=np.min(chisqIm) + chisqCutoff,cmap='jet')
 					axeschisq[d-ii-1,d-jj].contour(chisqIm,extent=(min(axisLists[jj]),max(axisLists[jj]),min(axisLists[ii]),max(axisLists[ii])),levels = levels,colors='r')
+					axes[d-ii-1,d-jj].contour(chisqIm,extent=(min(axisLists[jj]),max(axisLists[jj]),min(axisLists[ii]),max(axisLists[ii])),levels = levels,colors='r')
 				
 				else:
 					axes[d-ii-1,d-jj].set_visible(False)
@@ -186,15 +177,6 @@ def analyzeFit(fit,box,plot=True,showPlot=False,plotfn='fit',labels=None,searchR
 		if showPlot:
 			plt.show()
 		plt.close()
-
-		# try:
-		# 	bestFits[:,0] = np.add(np.multiply(bestFits[:,1],np.subtract(extent[:,1],extent[:,0])),extent[:,0])
-		# 	bestFits[:,1] = np.multiply(bestFits[:,1],np.subtract(extent[:,1],extent[:,0]))
-		# except:
-		# 	extent = None
-			# bestFits[:,0] = np.add(np.multiply(bestFits[:,1],np.subtract(realBounds[:,1],realBounds[:,0])),realBounds[:,0])
-			# bestFits[:,1] = np.multiply(bestFits[:,1],np.subtract(realBounds[:,1],realBounds[:,0]))
-
 
 		
 	return bestFits
@@ -255,27 +237,14 @@ def plotNewPointsRBF(prevPoints,newPoints,plotfn,PDF_func=chisqToPDF,labels=None
 
 	## Get the Bayes fit
 
-	fit = bb.getFit(prevPoints)
+	fit = bb.getFit(prevPoints,{},method='rbf')
 
 	## Get the box shape
 	box = bb.getBox(prevPoints[:,:-1])
 
-	# d = len(box)
-	# print box
-
 	# Get the number of dimensions and find the smallest grid with more than a given number of points in that dimension.
 	d = len(box)
 	N,n = getGridDimensions(100000,d)
-
-	# Determine the values which correspond to the points in the grid
-	# try:
-	# 	len(extent)
-	# 	realBounds = extent[:]
-	# 	for i in range(len(extent)):
-	# 		for ii in range(2):
-	# 			realBounds[i][ii] = extent[i][0] + searchRange[i][ii] * (extent[i][1] - extent[i][0])
-	# except:inpoints[:,:-1] = unScalePoints(box, inpoints[:,:-1])
-	# 	realBounds = searchRange[:]
 
 	axisLists = [np.linspace(b[0],b[1],n+2)[1:-1] for b in box]
 	
@@ -292,7 +261,6 @@ def plotNewPointsRBF(prevPoints,newPoints,plotfn,PDF_func=chisqToPDF,labels=None
 	# Construct a list of points which comprise the grid.
 	sPoints = np.asarray([gridder(j) for j in range(N)])
 
-	# print sPoints
 	# Determine the desired output shape and perform the fit function over the grid.
 	s = [n for K in range(d)]
 	f = fit(sPoints).reshape(s)
@@ -300,9 +268,6 @@ def plotNewPointsRBF(prevPoints,newPoints,plotfn,PDF_func=chisqToPDF,labels=None
 	# Turn the fit function grid into a PDF grid.
 	pF = PDF_func(f,d)
 
-	# # Marginalize over each dimension to find the mean and stdev over those dimensions.
-	# bestFits = np.asarray([bestValFromPDF(marginalizePDF(pF,[i,i]),axisLists[i]) for i in range(d)])
-	
 	if labels == None:
 		print("No labels provided! Reverting to default labelling.")
 		labels = ["Parameter " + str(i+1) for i in range(d)]
@@ -373,9 +338,6 @@ def plotNewPointsRBF(prevPoints,newPoints,plotfn,PDF_func=chisqToPDF,labels=None
 
 	fig.savefig(plotfn + "_fit.png")
 	
-	# print showPlot
-	# if showPlot:
-	# plt.show()
 	plt.close()
 
 	pass
@@ -401,10 +363,12 @@ def plotNewPointsBayes(prevPoints,newPoints,plotfn,PDF_func=chisqToPDF,labels=No
 
 	## Get the Bayes fit
 
-	fit, stdFit = bb.getFit(prevPoints,method='bayes',returnStd=True)
+	fit, stdFit = bb.getFit(prevPoints,{'returnStd':True},method='bayes')
 
 	## Get the box shape
 	box = bb.getBox(prevPoints[:,:-1])
+	# print 'box'
+	# print box
 
 	# d = len(box)
 	# print box
@@ -413,18 +377,7 @@ def plotNewPointsBayes(prevPoints,newPoints,plotfn,PDF_func=chisqToPDF,labels=No
 	d = len(box)
 	N,n = getGridDimensions(100000,d)
 
-	# Determine the values which correspond to the points in the grid
-	# try:
-	# 	len(extent)
-	# 	realBounds = extent[:]
-	# 	for i in range(len(extent)):
-	# 		for ii in range(2):
-	# 			realBounds[i][ii] = extent[i][0] + searchRange[i][ii] * (extent[i][1] - extent[i][0])
-	# except:inpoints[:,:-1] = unScalePoints(box, inpoints[:,:-1])
-	# 	realBounds = searchRange[:]
-
 	axisLists = [np.linspace(b[0],b[1],n+2)[1:-1] for b in box]
-	
 
 	# Generate a function which will return a point in our space parameterized by a single index up to N.
 	def gridder(X):
@@ -438,7 +391,6 @@ def plotNewPointsBayes(prevPoints,newPoints,plotfn,PDF_func=chisqToPDF,labels=No
 	# Construct a list of points which comprise the grid.
 	sPoints = np.asarray([gridder(j) for j in range(N)])
 
-	# print sPoints
 	# Determine the desired output shape and perform the fit function over the grid.
 	s = [n for K in range(d)]
 	f = fit(sPoints).reshape(s)
@@ -447,9 +399,6 @@ def plotNewPointsBayes(prevPoints,newPoints,plotfn,PDF_func=chisqToPDF,labels=No
 	# Turn the fit function grid into a PDF grid.
 	pF = PDF_func(f,d)
 
-	# # Marginalize over each dimension to find the mean and stdev over those dimensions.
-	# bestFits = np.asarray([bestValFromPDF(marginalizePDF(pF,[i,i]),axisLists[i]) for i in range(d)])
-	
 	if labels == None:
 		print("No labels provided! Reverting to default labelling.")
 		labels = ["Parameter " + str(i+1) for i in range(d)]
@@ -500,10 +449,9 @@ def plotNewPointsBayes(prevPoints,newPoints,plotfn,PDF_func=chisqToPDF,labels=No
 				axes[d-ii-1,d-jj].imshow(np.flipud(chisqMarg),extent=(min(axisLists[jj]),max(axisLists[jj]),min(axisLists[ii]),max(axisLists[ii])), aspect='auto',cmap='jet',vmin=np.min(chisqMarg),vmax=np.min(chisqMarg) + chisqCutoff)
 				axes[d-ii-1,d-jj].contour(chisqMarg,extent=(min(axisLists[jj]),max(axisLists[jj]),min(axisLists[ii]),max(axisLists[ii])),colors = 'r', levels = L )
 
-				# chisqIm = PDFtoChisq(dist,d)
 				axeschisq[d-ii-1,d-jj].imshow(np.flipud(sigMarg),extent=(min(axisLists[jj]),max(axisLists[jj]),min(axisLists[ii]),max(axisLists[ii])), aspect='auto',cmap='jet')#,vmin=np.min(sigMarg),vmax=np.min(sigMarg) + chisqCutoff)
 				axeschisq[d-ii-1,d-jj].contour(chisqMarg,extent=(min(axisLists[jj]),max(axisLists[jj]),min(axisLists[ii]),max(axisLists[ii])),colors = 'r', levels = L )
-				# print((min(axisLists[ii]),max(axisLists[ii])))
+
 				axes[d-ii-1,d-jj].scatter(prevPoints[:,jj],prevPoints[:,ii],c='y',edgecolor='k')
 				axes[d-ii-1,d-jj].scatter(newPoints[:,jj],newPoints[:,ii],c='r',edgecolor='k')
 				axes[d-ii-1,d-jj].set_xlim(min(axisLists[jj]),max(axisLists[jj]))
@@ -525,10 +473,6 @@ def plotNewPointsBayes(prevPoints,newPoints,plotfn,PDF_func=chisqToPDF,labels=No
 
 	fig.savefig(plotfn + "_fit.png")
 	figchisq.savefig(plotfn + "_fitErr.png")
-	# print showPlot
-	# if showPlot:
-	# plt.show()
 	plt.close()
 
 	pass
-
