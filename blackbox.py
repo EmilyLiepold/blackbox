@@ -256,6 +256,9 @@ def getNextPoints(inpoints,N, fitkwargs = {}, ptkwargs = {},method='rbf',plot=Fa
         # Accumulate the keywords for the getNewPoints function and run that.
         points, newpoints = getNewPoints(fit,inpoints,N, **ptkwargs)
         inpoints[:,:-1] = unScalePoints(box, inpoints[:,:-1])
+        
+        newpoints = np.asarray(unScalePoints(box, newpoints))
+
         if plot:
             u.plotNewPointsRBF(inpoints,newpoints,plotfn)
 
@@ -266,7 +269,9 @@ def getNextPoints(inpoints,N, fitkwargs = {}, ptkwargs = {},method='rbf',plot=Fa
         newpoints = getNewPointsBayes(inpoints,N)
         # print inpoints
         inpoints[:,:-1] = unScalePoints(box, inpoints[:,:-1])
-        
+        # print newpoints
+        newpoints = np.asarray(unScalePoints(box, newpoints))
+        # print newpoints.shape
         if plot:
             u.plotNewPointsBayes(inpoints,newpoints,plotfn)
 
@@ -642,7 +647,7 @@ def runNext(args):
     plot = False
     plotfn = ''
     method = 'rbf'
-    allowedParams = ['p', 'rho', 'nrand', 'randfrac', 'method']
+    allowedParams = ['p', 'rho', 'nrand', 'randfrac', 'method','plot']
     # optParams = {'p': p, 'rho': rho0, 'nrand': nrand, 'randfrac': nrand_frac, 'method': method}
     optParams = {}
 
