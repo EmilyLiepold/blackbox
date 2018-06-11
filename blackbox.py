@@ -272,8 +272,8 @@ def getNextPoints(inpoints,N, fitkwargs = {}, ptkwargs = {},method='rbf',plot=Fa
 
 
     # Return the unScaled points (with dimensions)
-    # return(unScalePoints(box,newpoints))
-    return(newpoints)
+    return(unScalePoints(box,newpoints))
+    #return(newpoints)
 
 def getNewPointsBayes(inpoints,N):
 
