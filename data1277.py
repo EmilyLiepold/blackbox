@@ -1,5 +1,6 @@
 import numpy
 from scipy.interpolate import interp2d, LinearNDInterpolator
+from utils import analyzeFit
 
 logMBH, logC, logFDM, ML, chi2 = numpy.loadtxt('/home/cmliepold/Documents/CPMa/Sampling_project/Blackbox/utils/1277.dat',usecols=(0,5,6,7,8),skiprows=1,unpack=True)
 
@@ -42,6 +43,24 @@ def chi2_2d_vec(paramlist):
 		return numpy.asarray(chi2_2d(paramlist)).reshape(-1,1)
 	return numpy.asarray([chi2_2d(param) for param in paramlist])
 
+def chi2_2d_vec_noise(noise_level):
+
+	noise_rchi2 = numpy.asarray([chi2 + numpy.random.normal(scale=noise_level) for chi2 in rchi2])
+
+	noisechi2fn = interp2d(rlogMBH,rML,noise_rchi2)
+	def noisechi2_2d(params):
+		return noisechi2fn(*params)
+	def noisechi2_2d_vec(paramlist):
+		if len(numpy.shape(numpy.asarray(paramlist))) == 1:
+			return numpy.asarray(noisechi2_2d(paramlist)).reshape(-1,1)
+		return numpy.asarray([noisechi2_2d(param) for param in paramlist])
+
+	return noisechi2_2d_vec
+
+
+def chi2_2d_params():
+	box = numpy.asarray([[9.2,10.2],[5.,15.]])
+	return(analyzeFit(chi2_2d_vec,box,plot=False))
 
 ## Now let's repeat for the three-dimensional case.
 
@@ -67,3 +86,7 @@ def chi2_3d_vec(paramlist):
 	if len(numpy.shape(numpy.asarray(paramlist))) == 1:
 		return numpy.asarray(chi2_3d(paramlist)).reshape(-1,1)
 	return numpy.asarray([chi2_3d(param) for param in paramlist])
+
+def chi2_3d_params():
+	box = numpy.asarray([[9.2,10.2],[5.,15.],[0.,3.]])
+	return(analyzeFit(chi2_3d_vec,box,plot=False))
