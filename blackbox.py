@@ -102,8 +102,19 @@ def getBox(points):
 
     return(np.asarray([[np.min(points[:,i]),np.max(points[:,i])] for i in range(len(points[0]))]))
 
+def expandBox(box,frac):
 
-def getFit(inpoints,fitkwargs, method='rbf'):
+    for i in range(len(box)):
+        span = box[i][1] - box[i][0]
+        box[i][0] -= span * frac
+        box[i][1] += span * frac
+    box = np.asarray(box)
+
+    return box
+
+
+
+def getFit(inpoints,fitkwargs={}, method='rbf'):
     # This function will take a list of points with shape (n,d+1), as well as other parameters
     # and return an rbf fit to that data.
 
@@ -179,7 +190,13 @@ def getFitBayes(inpoints,returnStd=False):
     points = copy.deepcopy(inpoints)
     # Rescale the data into the unit cube
     box = getBox(points[:,:-1])
+    # print 'initBox'
     # print box
+
+    box = expandBox(box,0.1)
+    # print 'expandedBox'
+    # print box
+
     points[:,:-1] = ScalePoints(box, points[:,:-1])
 
     # Rescale the data to be order unity
@@ -211,6 +228,9 @@ def getFitBayes(inpoints,returnStd=False):
             if len(x.shape) == 1:
                 x = np.asarray([x])
             x = np.asarray(ScalePoints(box,x))
+            # print 'outFit box'
+            # print box
+            # print 'x'
             # print x
             x_model = opt.space.transform(x.tolist())
             y_pred, sigma = model.predict(x_model, return_std=True)
@@ -256,7 +276,7 @@ def getNextPoints(inpoints,N, fitkwargs = {}, ptkwargs = {},method='rbf',plot=Fa
     if method == 'rbf':
         inpoints[:,:-1] = ScalePoints(box, inpoints[:,:-1])
         # Accumulate the parameters for the fit and perform the fit
-        fit = getFit(inpoints,fitkwargs,method=method)
+        fit = getFit(inpoints,fitkwargs=fitkwargs,method=method)
 
         # Accumulate the keywords for the getNewPoints function and run that.
         points, newpoints = getNewPoints(fit,inpoints,N, **ptkwargs)
@@ -279,13 +299,21 @@ def getNextPoints(inpoints,N, fitkwargs = {}, ptkwargs = {},method='rbf',plot=Fa
     ## Return (with dimensions) the new points
     return(newpoints)
 
-def getNewPointsBayes(inpoints,N):
+def getNewPointsBayes(inpoints,N,regrid=True):
 
     # Make a copy of the input data
     points = copy.deepcopy(inpoints)
 
     # Rescale the data into the unit cube
     box = getBox(points[:,:-1])
+
+    if regrid:
+        for i in range(len(box)):
+            span = box[i][1] - box[i][0]
+            box[i][0] -= span * 0.1
+            box[i][1] += span * 0.1
+        box = np.asarray(box)
+
     points[:,:-1] = ScalePoints(box, points[:,:-1])
 
     # Rescale the data to be order unity
@@ -712,6 +740,7 @@ def runAnalysis(args):
     infname = args[2]
     inpoints = np.loadtxt(infname)
     box = getBox(inpoints[:,:-1])
+    box = expandBox(box,0.1)
     
     plot = False
     plotfn = infname + ".png"
@@ -739,7 +768,7 @@ def runAnalysis(args):
 
     print('Performing a '+method+' style fit')
     # if method == 'rbf':
-    fit = getFit(inpoints,{},method=method)
+    fit = getFit(inpoints,fitkwargs={},method=method)
         
     # elif method == 'bayes':
         # fit = getFitBayes(inpoints)

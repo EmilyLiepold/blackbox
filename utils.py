@@ -201,8 +201,12 @@ def marginalizeOverPDF(PDF,fx,remainingAxes):
 	for i in set(remainingAxes):
 		axes.remove(i)
 
+	minPDF = np.min(PDF[np.nonzero(PDF)])
+	PDF = np.add(PDF,minPDF)
+
 	mFxPDF = np.sum(np.multiply(PDF,fx),axis=tuple(axes))
 	mPDF = marginalizePDF(PDF,remainingAxes)
+
 	return(np.divide(mFxPDF,mPDF))
 
 
@@ -237,7 +241,7 @@ def plotNewPointsRBF(prevPoints,newPoints,plotfn,PDF_func=chisqToPDF,labels=None
 
 	## Get the Bayes fit
 
-	fit = bb.getFit(prevPoints,{},method='rbf')
+	fit = bb.getFit(prevPoints,fitkwargs={},method='rbf')
 
 	## Get the box shape
 	box = bb.getBox(prevPoints[:,:-1])
@@ -363,10 +367,13 @@ def plotNewPointsBayes(prevPoints,newPoints,plotfn,PDF_func=chisqToPDF,labels=No
 
 	## Get the Bayes fit
 
-	fit, stdFit = bb.getFit(prevPoints,{'returnStd':True},method='bayes')
+	fit, stdFit = bb.getFit(prevPoints,fitkwargs={'returnStd':True},method='bayes')
+
+	# ptsForBox = np.append(prevPoints[:,:-1],newPoints,axis=0)
 
 	## Get the box shape
 	box = bb.getBox(prevPoints[:,:-1])
+	box = bb.expandBox(box,0.1)
 	# print 'box'
 	# print box
 
@@ -391,6 +398,8 @@ def plotNewPointsBayes(prevPoints,newPoints,plotfn,PDF_func=chisqToPDF,labels=No
 	# Construct a list of points which comprise the grid.
 	sPoints = np.asarray([gridder(j) for j in range(N)])
 
+	# print sPoints
+	# print box
 	# Determine the desired output shape and perform the fit function over the grid.
 	s = [n for K in range(d)]
 	f = fit(sPoints).reshape(s)
@@ -449,6 +458,7 @@ def plotNewPointsBayes(prevPoints,newPoints,plotfn,PDF_func=chisqToPDF,labels=No
 				axes[d-ii-1,d-jj].imshow(np.flipud(chisqMarg),extent=(min(axisLists[jj]),max(axisLists[jj]),min(axisLists[ii]),max(axisLists[ii])), aspect='auto',cmap='jet',vmin=np.min(chisqMarg),vmax=np.min(chisqMarg) + chisqCutoff)
 				axes[d-ii-1,d-jj].contour(chisqMarg,extent=(min(axisLists[jj]),max(axisLists[jj]),min(axisLists[ii]),max(axisLists[ii])),colors = 'r', levels = L )
 
+				# axeschisq[d-ii-1,d-jj].imshow(np.flipud(dist),extent=(min(axisLists[jj]),max(axisLists[jj]),min(axisLists[ii]),max(axisLists[ii])), aspect='auto',cmap='jet')#,vmin=np.min(sigMarg),vmax=np.min(sigMarg) + chisqCutoff)
 				axeschisq[d-ii-1,d-jj].imshow(np.flipud(sigMarg),extent=(min(axisLists[jj]),max(axisLists[jj]),min(axisLists[ii]),max(axisLists[ii])), aspect='auto',cmap='jet')#,vmin=np.min(sigMarg),vmax=np.min(sigMarg) + chisqCutoff)
 				axeschisq[d-ii-1,d-jj].contour(chisqMarg,extent=(min(axisLists[jj]),max(axisLists[jj]),min(axisLists[ii]),max(axisLists[ii])),colors = 'r', levels = L )
 
@@ -473,6 +483,7 @@ def plotNewPointsBayes(prevPoints,newPoints,plotfn,PDF_func=chisqToPDF,labels=No
 
 	fig.savefig(plotfn + "_fit.png")
 	figchisq.savefig(plotfn + "_fitErr.png")
+	plt.show()
 	plt.close()
 
 	pass
