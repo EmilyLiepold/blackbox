@@ -184,18 +184,26 @@ def getFitRBF(inpoints,nrand=10000,nrand_frac=0.05):
     # Return a fit with dimensions
     return returnedScaleFit
 
-def getFitBayes(inpoints,returnStd=False):
+def getFitBayes(inpoints,returnStd=False,scale=None):
 
     # Copy the input data.
     points = copy.deepcopy(inpoints)
     # Rescale the data into the unit cube
-    box = getBox(points[:,:-1])
-    # print 'initBox'
-    # print box
 
-    box = expandBox(box,0.1)
-    # print 'expandedBox'
-    # print box
+
+
+    if scale is None:
+        box = getBox(points[:,:-1])
+        # print 'initBox'
+        # print box
+
+        # box = expandBox(box,0.1)
+        # print 'expandedBox'
+        # print box
+    else:
+        dataBox = getBox(points[:,:-1])
+        box = np.asarray([[dataBox[i][0], dataBox[i][0] + scale[i]] for i in range(len(dataBox))])
+
 
     points[:,:-1] = ScalePoints(box, points[:,:-1])
 
@@ -204,7 +212,13 @@ def getFitBayes(inpoints,returnStd=False):
     points[:,-1] = points[:,-1] / fmax
 
     # Construct the bounds of the unit box
-    dimensions = [(0.,1) for i in range(len(box))]
+    # dimensions = [(0.,1) for i in range(len(box))]
+    # print 'd1'
+    # print dimensions
+    dimensions = getBox(points[:,:-1])
+    dimensions = expandBox(dimensions,0.01)
+    # print 'd2'
+    # print dimensions
 
     # Construct the GP optimizer with the LCB acquisition function
     opt = Optimizer(dimensions, "gp",acq_func='LCB')
@@ -224,16 +238,14 @@ def getFitBayes(inpoints,returnStd=False):
         model = opt.models[-1]
 
         def outFit(x):
-            x = np.asarray(x)
+            if type(x) is not np.ndarray:
+                x = np.asarray(x)
             if len(x.shape) == 1:
                 x = np.asarray([x])
+            
             x = np.asarray(ScalePoints(box,x))
-            # print 'outFit box'
-            # print box
-            # print 'x'
-            # print x
             x_model = opt.space.transform(x.tolist())
-            y_pred, sigma = model.predict(x_model, return_std=True)
+            y_pred = model.predict(x_model,return_std=False)
             return y_pred * fmax
         if returnStd:
             def outFitSigma(x):
@@ -290,7 +302,7 @@ def getNextPoints(inpoints,N, fitkwargs = {}, ptkwargs = {},method='rbf',plot=Fa
 
     elif method == 'bayes':
 
-        newpoints = getNewPointsBayes(inpoints,N)
+        newpoints = getNewPointsBayes(inpoints,N, **fitkwargs)
 
         if plot:
             u.plotNewPointsBayes(inpoints,newpoints,plotfn)
@@ -299,14 +311,30 @@ def getNextPoints(inpoints,N, fitkwargs = {}, ptkwargs = {},method='rbf',plot=Fa
     ## Return (with dimensions) the new points
     return(newpoints)
 
-def getNewPointsBayes(inpoints,N,regrid=True):
+def getNewPointsBayes(inpoints,N,regrid=False,scale=None):
 
     # Make a copy of the input data
     points = copy.deepcopy(inpoints)
 
-    # Rescale the data into the unit cube
-    box = getBox(points[:,:-1])
+    
 
+    if scale is None:
+
+        dataBox = getBox(points[:,:-1])
+        # Calculate the best fit and get the scale from its error bars.
+        trialfit = getFit(points,fitkwargs={},method='bayes')
+        BF = u.analyzeFit(trialfit,dataBox,plot=False)
+        scale = [b[1] for b in BF]
+        # Rescale the data into the unit cube
+        # dataBox = getBox(points[:,:-1])
+        box = np.asarray([[dataBox[i][0], dataBox[i][0] + scale[i]] for i in range(len(dataBox))])
+        
+    else:
+
+        dataBox = getBox(points[:,:-1])
+        box = np.asarray([[dataBox[i][0], dataBox[i][0] + scale[i]] for i in range(len(dataBox))])
+
+    
     if regrid:
         for i in range(len(box)):
             span = box[i][1] - box[i][0]
@@ -321,7 +349,8 @@ def getNewPointsBayes(inpoints,N,regrid=True):
     points[:,-1] = points[:,-1] / fmax
 
     # Construct the bounds of the unit box
-    dimensions = [(0.,1) for i in range(len(box))]
+    # dimensions = [(0.,1) for i in range(len(box))]
+    dimensions = getBox(points[:,:-1])
 
     # Construct the GP optimizer with the LCB acquisition function
     opt = Optimizer(dimensions, "gp",acq_func='LCB')
@@ -740,7 +769,7 @@ def runAnalysis(args):
     infname = args[2]
     inpoints = np.loadtxt(infname)
     box = getBox(inpoints[:,:-1])
-    box = expandBox(box,0.1)
+    # box = expandBox(box,0.1)
     
     plot = False
     plotfn = infname + ".png"

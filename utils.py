@@ -50,6 +50,7 @@ def analyzeFit(fit,box,plot=True,showPlot=False,plotfn='fit',labels=None,searchR
 		paramRanges = [searchFraction[i] * (b[1] - b[0]) for i,b in enumerate(box)]
 
 		# Find the minimum of the the function over the space,
+		# print box
 		func_min = minimize(fit,boxCenter,bounds=box).x
 
 		# Contruct the searchRange by moving paramRanges to the left and right of the minimum
@@ -67,7 +68,7 @@ def analyzeFit(fit,box,plot=True,showPlot=False,plotfn='fit',labels=None,searchR
 
 	# Get the number of dimensions and find the smallest grid with more than a given number of points in that dimension.
 	d = len(box)
-	N,n = getGridDimensions(100000,d)
+	N,n = getGridDimensions(1000000,d)
 
 	axisLists = [np.linspace(s[0],s[1],n) for s in searchRange]
 	
@@ -133,8 +134,9 @@ def analyzeFit(fit,box,plot=True,showPlot=False,plotfn='fit',labels=None,searchR
 				axes[ii,jj].set_xticklabels([])
 				axeschisq[ii,jj].set_xticklabels([])
 
-				axes[ii+1,jj+1].set_yticklabels([])
-				axeschisq[ii+1,jj+1].set_yticklabels([])
+				if ii != d-1:
+					axes[ii+1,jj+1].set_yticklabels([])
+					axeschisq[ii+1,jj+1].set_yticklabels([])
 
 				dist = marginalizePDF(pF,[ii,jj])
 
@@ -164,6 +166,7 @@ def analyzeFit(fit,box,plot=True,showPlot=False,plotfn='fit',labels=None,searchR
 				else:
 					axes[d-ii-1,d-jj].set_visible(False)
 					axeschisq[d-ii-1,d-jj].set_visible(False)
+
 
 		fig.subplots_adjust(hspace=0.,wspace=0.)
 		figchisq.subplots_adjust(hspace=0.,wspace=0.)
@@ -373,7 +376,7 @@ def plotNewPointsBayes(prevPoints,newPoints,plotfn,PDF_func=chisqToPDF,labels=No
 
 	## Get the box shape
 	box = bb.getBox(prevPoints[:,:-1])
-	box = bb.expandBox(box,0.1)
+	# box = bb.expandBox(box,0.1)
 	# print 'box'
 	# print box
 
@@ -427,8 +430,9 @@ def plotNewPointsBayes(prevPoints,newPoints,plotfn,PDF_func=chisqToPDF,labels=No
 			axes[ii,jj].set_xticklabels([])
 			axeschisq[ii,jj].set_xticklabels([])
 
-			axes[ii+1,jj+1].set_yticklabels([])
-			axeschisq[ii+1,jj+1].set_yticklabels([])
+			if ii != d-1:
+				axes[ii+1,jj+1].set_yticklabels([])
+				axeschisq[ii+1,jj+1].set_yticklabels([])
 
 			dist = marginalizePDF(pF,[ii,jj])
 			chisqMarg = marginalizeOverPDF(pF,f,[ii,jj])
@@ -483,7 +487,7 @@ def plotNewPointsBayes(prevPoints,newPoints,plotfn,PDF_func=chisqToPDF,labels=No
 
 	fig.savefig(plotfn + "_fit.png")
 	figchisq.savefig(plotfn + "_fitErr.png")
-	plt.show()
+	# plt.show()
 	plt.close()
 
 	pass
