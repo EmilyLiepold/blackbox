@@ -193,6 +193,16 @@ def getFitBayes(inpoints,returnStd=False,scale=None):
 
 
     if scale is None:
+        dataBox = getBox(points[:,:-1])
+        trialScale = [b[1] - b[0] for b in dataBox]
+        # Calculate the best fit and get the scale from its error bars.
+        trialfit = getFit(points,fitkwargs={'scale':trialScale},method='bayes')
+        BF = u.analyzeFit(trialfit,dataBox,plot=False)
+        scale = [b[1] for b in BF]
+        # Rescale the data into the unit cube
+        # dataBox = getBox(points[:,:-1])
+        box = np.asarray([[dataBox[i][0], dataBox[i][0] + scale[i]] for i in range(len(dataBox))])
+
         box = getBox(points[:,:-1])
         # print 'initBox'
         # print box
@@ -316,7 +326,7 @@ def getNewPointsBayes(inpoints,N,regrid=False,scale=None):
     # Make a copy of the input data
     points = copy.deepcopy(inpoints)
 
-    
+    BBB = 0.01
 
     if scale is None:
 
@@ -327,12 +337,12 @@ def getNewPointsBayes(inpoints,N,regrid=False,scale=None):
         scale = [b[1] for b in BF]
         # Rescale the data into the unit cube
         # dataBox = getBox(points[:,:-1])
-        box = np.asarray([[dataBox[i][0], dataBox[i][0] + scale[i]] for i in range(len(dataBox))])
+        box = np.asarray([[dataBox[i][0], dataBox[i][0] + scale[i] * BBB] for i in range(len(dataBox))])
         
     else:
 
         dataBox = getBox(points[:,:-1])
-        box = np.asarray([[dataBox[i][0], dataBox[i][0] + scale[i]] for i in range(len(dataBox))])
+        box = np.asarray([[dataBox[i][0], dataBox[i][0] + scale[i] * BBB] for i in range(len(dataBox))])
 
     
     if regrid:
@@ -351,7 +361,7 @@ def getNewPointsBayes(inpoints,N,regrid=False,scale=None):
     # Construct the bounds of the unit box
     # dimensions = [(0.,1) for i in range(len(box))]
     dimensions = getBox(points[:,:-1])
-
+    print dimensions
     # Construct the GP optimizer with the LCB acquisition function
     opt = Optimizer(dimensions, "gp",acq_func='LCB')
 
@@ -776,6 +786,8 @@ def runAnalysis(args):
     method = 'rbf'
     foundLabel = False
 
+    getErr = False
+    errFit = None
     d = len(inpoints[0]) - 1
 
     argList = args[3:]
@@ -794,19 +806,26 @@ def runAnalysis(args):
             method = 'bayes'
         if argList[i] == "rbf":
             method = 'rbf'
+        if argList[i] == "err":
+            getErr = True
+
+
 
     print('Performing a '+method+' style fit')
     # if method == 'rbf':
-    fit = getFit(inpoints,fitkwargs={},method=method)
+    if getErr:
+        fit, errFit = getFit(inpoints,fitkwargs={'returnStd':getErr},method=method)
+    else:
+        fit = getFit(inpoints,fitkwargs={},method=method)
         
     # elif method == 'bayes':
         # fit = getFitBayes(inpoints)
 
     # unitbox = np.asarray([[0.,1.],[0.,1.]])
     if foundLabel:
-        BF = u.analyzeFit(fit,box,plot=plot,plotfn=plotfn,labels=labels)#,extent=box)
+        BF = u.analyzeFit(fit,box,plot=plot,plotfn=plotfn,labels=labels,errFit=errFit)#,extent=box)
     else:
-        BF = u.analyzeFit(fit,box,plot=plot,plotfn=plotfn)
+        BF = u.analyzeFit(fit,box,plot=plot,plotfn=plotfn,errFit=errFit)
 
     BF = np.asarray(BF)
     

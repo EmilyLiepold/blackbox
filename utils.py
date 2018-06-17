@@ -13,7 +13,7 @@ def PDFtoChisq(fRed,d):
 	return np.subtract(chisq,np.min(chisq))
 
 
-def analyzeFit(fit,box,plot=True,showPlot=False,plotfn='fit',labels=None,searchRange = None,searchFraction=0.2,PDF_func=chisqToPDF,PDF_inv_func=PDFtoChisq):
+def analyzeFit(fit,box,plot=True,showPlot=False,plotfn='fit',labels=None,searchRange = None,searchFraction=0.2,PDF_func=chisqToPDF,PDF_inv_func=PDFtoChisq,errFit=None):
 	## This function will take a fit function which is defined over a space defined by box and return the best fit parameters over that space
 	## That fit function must take in a list of lists of parameters with a shape (n,d) and return a list with shape (n).
 	
@@ -31,6 +31,10 @@ def analyzeFit(fit,box,plot=True,showPlot=False,plotfn='fit',labels=None,searchR
 	##          correspond to that box. This param is a bit hacky so I'll try to make it nicer.
 	##     PDF_func is a function which turns the output of 'fit' into a member of a probability distribution.
 
+	if errFit is not None:
+		plotErr = True
+	else:
+		plotErr = False
 
 	## if a search range hasn't been provided, construct one.
 	if searchRange == None:
@@ -68,7 +72,7 @@ def analyzeFit(fit,box,plot=True,showPlot=False,plotfn='fit',labels=None,searchR
 
 	# Get the number of dimensions and find the smallest grid with more than a given number of points in that dimension.
 	d = len(box)
-	N,n = getGridDimensions(1000000,d)
+	N,n = getGridDimensions(100000,d)
 
 	axisLists = [np.linspace(s[0],s[1],n) for s in searchRange]
 	
@@ -88,6 +92,8 @@ def analyzeFit(fit,box,plot=True,showPlot=False,plotfn='fit',labels=None,searchR
 	# Determine the desired output shape and perform the fit function over the grid.
 	s = [n for K in range(d)]
 	f = fit(sPoints).reshape(s)
+	if plotErr:
+		ferr = errFit(sPoints).reshape(s)
 
 	# Turn the fit function grid into a PDF grid.
 	pF = PDF_func(f,d)
@@ -112,7 +118,8 @@ def analyzeFit(fit,box,plot=True,showPlot=False,plotfn='fit',labels=None,searchR
 
 		for i in rerunParams:
 			newsearchFraction[i] *= 2
-		return analyzeFit(fit,box,plot=plot,plotfn=plotfn,labels=labels,searchRange = None,searchFraction = newsearchFraction,showPlot=showPlot,PDF_func=PDF_func)
+		return analyzeFit(fit,box,plot=plot,plotfn=plotfn,labels=labels,searchRange = None,searchFraction = newsearchFraction,showPlot=showPlot,PDF_func=PDF_func,errFit=errFit)
+
 
 	# If all of the parameters are good and we want to plot, then plot!
 	elif plot:
@@ -125,48 +132,72 @@ def analyzeFit(fit,box,plot=True,showPlot=False,plotfn='fit',labels=None,searchR
 		plt.close()
 
 		chisqCutoff = - d * np.log(1 - erf(5 / 2**0.5))
-		levels = [- d * np.log(1 - erf(II / 2**0.5)) for II in [1,2,3,4]]
+		levels = [np.min(f) - d * np.log(1 - erf(II / 2**0.5)) for II in [1,2,3,4]]
 
 		fig, axes = plt.subplots(d+1,d+1)
 		figchisq, axeschisq = plt.subplots(d+1,d+1)
+		if plotErr:
+			figerr, axeserr = plt.subplots(d+1,d+1)
+
+
 		for ii in range(d):
 			for jj in range(d):
 				axes[ii,jj].set_xticklabels([])
 				axeschisq[ii,jj].set_xticklabels([])
 
+				if plotErr:
+					axeserr[ii,jj].set_xticklabels([])
+
 				if ii != d-1:
 					axes[ii+1,jj+1].set_yticklabels([])
 					axeschisq[ii+1,jj+1].set_yticklabels([])
+					if plotErr:
+						axeserr[ii+1,jj+1].set_yticklabels([])
 
 				dist = marginalizePDF(pF,[ii,jj])
+				chisqIm = marginalizeOverPDF(pF,f,[ii,jj])
+				if plotErr:
+					errIm = marginalizeOverPDF(pF,ferr,[ii,jj])
 
 				if ii == jj:
 					axes[d-ii-1,d-jj].set_visible(False)
 					axeschisq[d-ii-1,d-jj].set_visible(False)
 
 					axes[-1,d-jj].plot(axisLists[ii], dist)
-					axeschisq[-1,d-jj].plot(axisLists[ii], PDFtoChisq(dist,d))
+					axeschisq[-1,d-jj].plot(axisLists[ii], chisqIm)
 
 					axes[-1,d-jj].set_xlabel(labels[ii])
 					axeschisq[-1,d-jj].set_xlabel(labels[ii])
 
 					axes[d-ii-1,0].plot(dist, axisLists[ii])
-					axeschisq[d-ii-1,0].plot(PDFtoChisq(dist,d), axisLists[ii])
+					axeschisq[d-ii-1,0].plot(chisqIm, axisLists[ii])
 
 					axes[d-ii-1,0].set_ylabel(labels[ii])
 					axeschisq[d-ii-1,0].set_ylabel(labels[ii])
 
+					if plotErr:
+						axeserr[d-ii-1,d-jj].set_visible(False)
+						axeserr[-1,d-jj].plot(axisLists[ii], errIm)
+						axeserr[-1,d-jj].set_xlabel(labels[ii])
+						axeserr[d-ii-1,0].plot(errIm, axisLists[ii])
+						axeserr[d-ii-1,0].set_ylabel(labels[ii])
+
 				elif ii < jj:
 					axes[d-ii-1,d-jj].imshow(np.flipud(dist),extent=(min(axisLists[jj]),max(axisLists[jj]),min(axisLists[ii]),max(axisLists[ii])), aspect='auto',cmap='jet')
-					chisqIm = PDFtoChisq(dist,d)
+					axes[d-ii-1,d-jj].contour(chisqIm,extent=(min(axisLists[jj]),max(axisLists[jj]),min(axisLists[ii]),max(axisLists[ii])),levels = levels,colors='r')
+
 					axeschisq[d-ii-1,d-jj].imshow(np.flipud(chisqIm),extent=(min(axisLists[jj]),max(axisLists[jj]),min(axisLists[ii]),max(axisLists[ii])), aspect='auto',vmin=np.min(chisqIm),vmax=np.min(chisqIm) + chisqCutoff,cmap='jet')
 					axeschisq[d-ii-1,d-jj].contour(chisqIm,extent=(min(axisLists[jj]),max(axisLists[jj]),min(axisLists[ii]),max(axisLists[ii])),levels = levels,colors='r')
-					axes[d-ii-1,d-jj].contour(chisqIm,extent=(min(axisLists[jj]),max(axisLists[jj]),min(axisLists[ii]),max(axisLists[ii])),levels = levels,colors='r')
-				
+					
+					if plotErr:
+						axeserr[d-ii-1,d-jj].imshow(np.flipud(errIm),extent=(min(axisLists[jj]),max(axisLists[jj]),min(axisLists[ii]),max(axisLists[ii])), aspect='auto',vmin=0,vmax=50.,cmap='jet')
+						axeserr[d-ii-1,d-jj].contour(chisqIm,extent=(min(axisLists[jj]),max(axisLists[jj]),min(axisLists[ii]),max(axisLists[ii])),levels = levels,colors='r')
+					
 				else:
 					axes[d-ii-1,d-jj].set_visible(False)
 					axeschisq[d-ii-1,d-jj].set_visible(False)
-
+					if plotErr:
+						axeserr[d-ii-1,d-jj].set_visible(False)
 
 		fig.subplots_adjust(hspace=0.,wspace=0.)
 		figchisq.subplots_adjust(hspace=0.,wspace=0.)
@@ -176,6 +207,10 @@ def analyzeFit(fit,box,plot=True,showPlot=False,plotfn='fit',labels=None,searchR
 
 		fig.savefig(plotfn + ".png")
 		figchisq.savefig(plotfn + "_chisq.png")
+		if plotErr:
+			figerr.subplots_adjust(hspace=0.,wspace=0.)
+			axeserr[-1,0].set_visible(False)
+			figerr.savefig(plotfn + "_err.png")
 		# print showPlot
 		if showPlot:
 			plt.show()
