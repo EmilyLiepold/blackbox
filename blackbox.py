@@ -747,7 +747,10 @@ def runNext(args):
             print(args[5 + 2 * i] + "isn't a parameter that I recognize! Please try something else.")
             exit(1)
 
-    inpoints = np.loadtxt(infname)
+
+	inpoints = u.loadFile(infname)
+
+
 
     ptkwargs = {}
     fitkwargs = {}
@@ -777,7 +780,7 @@ def runAnalysis(args):
         exit(1)
 
     infname = args[2]
-    inpoints = np.loadtxt(infname)
+    inpoints = u.loadFile(infname)
     box = getBox(inpoints[:,:-1])
     # box = expandBox(box,0.1)
     

@@ -4,6 +4,23 @@ import matplotlib.pyplot as plt
 from scipy.special import erf
 import blackbox as bb
 
+def loadFile(f):
+	F = open(f,'r')
+	outList = []
+	for i, FF in enumerate(F):
+		if i == 0:
+			nCols = len(FF.split())
+		if FF[0] == "#":
+			continue
+		if len(FF.split()) == nCols:
+			outList.append(map(float,FF.split()))
+		else:
+			continue
+			
+	return np.asarray(outList)
+
+
+
 def chisqToPDF(chisq,d):
 	fRed = np.exp(-np.divide(np.subtract(chisq,np.min(chisq)),d))
 	return np.divide(fRed,np.sum(fRed))
@@ -461,6 +478,15 @@ def plotNewPointsBayes(prevPoints,newPoints,plotfn,PDF_func=chisqToPDF,labels=No
 	chisqCutoff = - d * np.log(1 - erf(5 / 2**0.5))
 
 	levels = [- d * np.log(1 - erf(II / 2**0.5)) for II in [1,2,3,4]]
+
+	## TEMPORARY
+
+	# chisqCutoff = - d * np.log(1 - erf(8 / 2**0.5))
+
+	# levels = [- d * np.log(1 - erf(II / 2**0.5)) for II in [2,4,6,8]]
+
+
+
 
 	fig, axes = plt.subplots(d+1,d+1)
 	figchisq, axeschisq = plt.subplots(d+1,d+1)
