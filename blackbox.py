@@ -321,7 +321,7 @@ def getNextPoints(inpoints,N, fitkwargs = {}, ptkwargs = {},method='rbf',plot=Fa
     ## Return (with dimensions) the new points
     return(newpoints)
 
-def getNewPointsBayes(inpoints,N,regrid=False,scale=None):
+def getNewPointsBayes(inpoints,N,regrid=False,scale=None,kappa=1.96):
 
     # Make a copy of the input data
     points = copy.deepcopy(inpoints)
@@ -361,9 +361,9 @@ def getNewPointsBayes(inpoints,N,regrid=False,scale=None):
     # Construct the bounds of the unit box
     # dimensions = [(0.,1) for i in range(len(box))]
     dimensions = getBox(points[:,:-1])
-    print dimensions
+    # print dimensions
     # Construct the GP optimizer with the LCB acquisition function
-    opt = Optimizer(dimensions, "gp",acq_func='LCB')
+    opt = Optimizer(dimensions, "gp",acq_func='LCB',acq_func_kwargs={'kappa':1.96})
 
     # Tell the optimizer abount points
     opt.tell(points[:,:-1].tolist(),points[:,-1].tolist())

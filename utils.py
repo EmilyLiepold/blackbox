@@ -13,7 +13,7 @@ def PDFtoChisq(fRed,d):
 	return np.subtract(chisq,np.min(chisq))
 
 
-def analyzeFit(fit,box,plot=True,showPlot=False,plotfn='fit',labels=None,searchRange = None,searchFraction=0.2,PDF_func=chisqToPDF,PDF_inv_func=PDFtoChisq,errFit=None):
+def analyzeFit(fit,box,plot=True,showPlot=True,plotfn='fit',labels=None,searchRange = None,searchFraction=0.2,PDF_func=chisqToPDF,PDF_inv_func=PDFtoChisq,errFit=None):
 	## This function will take a fit function which is defined over a space defined by box and return the best fit parameters over that space
 	## That fit function must take in a list of lists of parameters with a shape (n,d) and return a list with shape (n).
 	
@@ -68,6 +68,7 @@ def analyzeFit(fit,box,plot=True,showPlot=False,plotfn='fit',labels=None,searchR
 
 	# Just to be safe, make everything a ndarray.
 	searchRange = np.asarray(searchRange)
+	# searchRange = np.asarray(box)
 	# print searchRange
 
 	# Get the number of dimensions and find the smallest grid with more than a given number of points in that dimension.
@@ -94,6 +95,7 @@ def analyzeFit(fit,box,plot=True,showPlot=False,plotfn='fit',labels=None,searchR
 	f = fit(sPoints).reshape(s)
 	if plotErr:
 		ferr = errFit(sPoints).reshape(s)
+	# print np.mean(f),np.min(f)
 
 	# Turn the fit function grid into a PDF grid.
 	pF = PDF_func(f,d)
@@ -442,6 +444,8 @@ def plotNewPointsBayes(prevPoints,newPoints,plotfn,PDF_func=chisqToPDF,labels=No
 	s = [n for K in range(d)]
 	f = fit(sPoints).reshape(s)
 	Sig = stdFit(sPoints).reshape(s)
+
+	print np.min(f),np.mean(f),np.max(f),np.std(f)
 
 	# Turn the fit function grid into a PDF grid.
 	pF = PDF_func(f,d)
