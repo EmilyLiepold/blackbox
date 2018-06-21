@@ -7,6 +7,10 @@ import blackboxhelper as bbh
 import utils as u
 from skopt import Optimizer
 
+from sklearn.gaussian_process import GaussianProcessRegressor
+from sklearn.gaussian_process.kernels import RBF, ConstantKernel
+
+
 def get_default_executor():
     """
     Provide a default executor (a context manager
@@ -190,87 +194,124 @@ def getFitBayes(inpoints,returnStd=False,scale=None):
     points = copy.deepcopy(inpoints)
     # Rescale the data into the unit cube
 
+    # meanVal = np.mean(points[:,-1])
+    # points[:,-1] = np.subtract(points[:,-1],meanVal)
+
+    # points[:,-1] = np.multiply(points[:,-1],-1)
+    ## grab the smallest value and store it
+
+    # minChi2 = np.min(points[:,-1])
+    # points[:,-1] = np.subtract(points[:,-1],minChi2)
+    # valScale = points[np.argsort(points[:,-1])[len(points[:,-1]) / 2],-1]
+    # points[:,-1] = np.divide(points[:,-1],valScale)
+
+    # points[:,-1] = np.power(10,-points[:,-1])
 
 
-    if scale is None:
-        dataBox = getBox(points[:,:-1])
-        trialScale = [b[1] - b[0] for b in dataBox]
-        # Calculate the best fit and get the scale from its error bars.
-        trialfit = getFit(points,fitkwargs={'scale':trialScale},method='bayes')
-        BF = u.analyzeFit(trialfit,dataBox,plot=False)
-        scale = [b[1] for b in BF]
-        # Rescale the data into the unit cube
-        # dataBox = getBox(points[:,:-1])
-        box = np.asarray([[dataBox[i][0], dataBox[i][0] + scale[i]] for i in range(len(dataBox))])
 
-        box = getBox(points[:,:-1])
-        # print 'initBox'
-        # print box
+    # if scale is None:
+    #     dataBox = getBox(points[:,:-1])
+    #     trialScale = [b[1] - b[0] for b in dataBox]
+    #     # Calculate the best fit and get the scale from its error bars.
+    #     trialfit = getFit(points,fitkwargs={'scale':trialScale},method='bayes')
+    #     BF = u.analyzeFit(trialfit,dataBox,plot=False)
+    #     scale = [b[1] for b in BF]
+    #     # Rescale the data into the unit cube
+    #     # dataBox = getBox(points[:,:-1])
+    #     box = np.asarray([[dataBox[i][0], dataBox[i][0] + scale[i]] for i in range(len(dataBox))])
 
-        # box = expandBox(box,0.1)
-        # print 'expandedBox'
-        # print box
-    else:
-        dataBox = getBox(points[:,:-1])
-        box = np.asarray([[dataBox[i][0], dataBox[i][0] + scale[i]] for i in range(len(dataBox))])
+    #     # box = getBox(points[:,:-1])
+    #     # print 'initBox'
+    #     # print box
 
+    #     # box = expandBox(box,0.1)
+    #     # print 'expandedBox'
+    #     # print box
+    # else:
+    #     dataBox = getBox(points[:,:-1])
+    #     box = np.asarray([[dataBox[i][0], dataBox[i][0] + scale[i]] for i in range(len(dataBox))])
 
-    points[:,:-1] = ScalePoints(box, points[:,:-1])
+    dimensions = getBox(points[:,:-1])
+    # print box
+    # print scale
+    # points[:,:-1] = ScalePoints(box, points[:,:-1])
 
     # Rescale the data to be order unity
-    fmax = np.max(np.abs(points[:,-1]))
-    points[:,-1] = points[:,-1] / fmax
+    # fmax = np.max(np.abs(points[:,-1]))
+    # points[:,-1] = points[:,-1] / fmax
 
     # Construct the bounds of the unit box
     # dimensions = [(0.,1) for i in range(len(box))]
     # print 'd1'
     # print dimensions
-    dimensions = getBox(points[:,:-1])
-    dimensions = expandBox(dimensions,0.01)
+    # dimensions = getBox(points[:,:-1])
+    # dimensions = expandBox(dimensions,0.01)
     # print 'd2'
     # print dimensions
 
+
+    kernel = ConstantKernel(1.) * RBF([0.1 * (d[1] - d[0]) for d in dimensions], [(1e-5, d[1] - d[0]) for d in dimensions])
+
+    model = GaussianProcessRegressor(alpha=2.5, kernel=kernel,n_restarts_optimizer=1000,normalize_y=True)
+
+    model.fit(points[:,:-1],points[:,-1])
+
+    print model
+    print model.kernel_
+
     # Construct the GP optimizer with the LCB acquisition function
-    opt = Optimizer(dimensions, "gp",acq_func='LCB')
+    # opt = Optimizer(dimensions, "gp",acq_func='LCB')
+
 
     # Tell the optimizer abount inpoints
-    opt.tell(points[:,:-1].tolist(),points[:,-1].tolist())
-
+    # opt.tell(points[:,:-1].tolist(),points[:,-1].tolist())
+    # print opt.models[-1]
     # See if we constructed a model
-    if len(opt.models) == 0:
-        print('Could not construct a model for that data! Oh well.')
-        return -1
-    else:
+    # if len(opt.models) == 0:
+    #     print('Could not construct a model for that data! Oh well.')
+    #     return -1
+    # else:
 
-        # If we did, get that model and construct wrappers which can
-        # be returned
+    # If we did, get that model and construct wrappers which can
+    # be returned
 
-        model = opt.models[-1]
+    # model = opt.models[-1]
 
-        def outFit(x):
-            if type(x) is not np.ndarray:
-                x = np.asarray(x)
+    def outFit(x):
+        if type(x) is not np.ndarray:
+            x = np.asarray(x)
+        if len(x.shape) == 1:
+            x = np.asarray([x])
+        
+        # x = np.asarray(ScalePoints(box,x))
+        # x_model = opt.space.transform(x.tolist())
+        y_pred = model.predict(x,return_std=False)
+
+        # print y_pred
+        # y_pred[y_pred < 1e-30] = 1e-30
+
+        # y_pred = -np.log10(y_pred)
+        # y_pred = np.multiply(y_pred,valScale)
+        # y_pred = np.add(y_pred,minChi2)
+        # print x,y_pred
+        # y_pred = np.add(y_pred,meanVal)
+        # y_pred_out = np.add(np.multiply(np.log10(y_pred),-valScale),minChi2)
+
+        return y_pred 
+    if returnStd:
+        def outFitSigma(x):
+            x = np.asarray(x)
             if len(x.shape) == 1:
                 x = np.asarray([x])
-            
-            x = np.asarray(ScalePoints(box,x))
-            x_model = opt.space.transform(x.tolist())
-            y_pred = model.predict(x_model,return_std=False)
-            return y_pred * fmax
-        if returnStd:
-            def outFitSigma(x):
-                x = np.asarray(x)
-                if len(x.shape) == 1:
-                    x = np.asarray([x])
-                x = np.asarray(ScalePoints(box,x))
+            # x = np.asarray(ScalePoints(box,x))
 
-                x_model = opt.space.transform(x.tolist())
-                y_pred, sigma = model.predict(x_model, return_std=True)
-                return sigma * fmax
+            # x_model = opt.space.transform(x.tolist())
+            y_pred, sigma = model.predict(x, return_std=True)
+            return sigma
 
-            return outFit, outFitSigma
-        else:
-            return outFit
+        return outFit, outFitSigma
+    else:
+        return outFit
 
 
 
@@ -326,47 +367,63 @@ def getNewPointsBayes(inpoints,N,regrid=False,scale=None,kappa=1.96):
     # Make a copy of the input data
     points = copy.deepcopy(inpoints)
 
-    BBB = 0.01
+    # BBB = 1.0
 
-    if scale is None:
+    # scale = [1.0 for i in range(len(points[0,:]) - 1)]
 
-        dataBox = getBox(points[:,:-1])
-        # Calculate the best fit and get the scale from its error bars.
-        trialfit = getFit(points,fitkwargs={},method='bayes')
-        BF = u.analyzeFit(trialfit,dataBox,plot=False)
-        scale = [b[1] for b in BF]
-        # Rescale the data into the unit cube
-        # dataBox = getBox(points[:,:-1])
-        box = np.asarray([[dataBox[i][0], dataBox[i][0] + scale[i] * BBB] for i in range(len(dataBox))])
+    # if scale is None:
+    #     print 'A'
+    #     dataBox = getBox(points[:,:-1])
+    #     print dataBox
+    #     # Calculate the best fit and get the scale from its error bars.
+    #     trialfit = getFit(points,fitkwargs={},method='bayes')
+    #     BF = u.analyzeFit(trialfit,dataBox,plot=False)
+    #     print  BF
+    #     scale = [b[1] for b in BF]
+    #     # Rescale the data into the unit cube
+    #     # dataBox = getBox(points[:,:-1])
+    #     box = np.asarray([[dataBox[i][0], dataBox[i][0] + scale[i] * BBB] for i in range(len(dataBox))])
         
-    else:
+    # else:
+    #     print 'B'
+    #     dataBox = getBox(points[:,:-1])
+    #     print dataBox
+    #     print scale
+    #     box = np.asarray([[dataBox[i][0], dataBox[i][0] + scale[i] * BBB] for i in range(len(dataBox))])
 
-        dataBox = getBox(points[:,:-1])
-        box = np.asarray([[dataBox[i][0], dataBox[i][0] + scale[i] * BBB] for i in range(len(dataBox))])
+        
+    # if regrid:
+    #     for i in range(len(box)):
+    #         span = box[i][1] - box[i][0]
+    #         box[i][0] -= span * 0.1
+    #         box[i][1] += span * 0.1
+    #     box = np.asarray(box)
 
-    
-    if regrid:
-        for i in range(len(box)):
-            span = box[i][1] - box[i][0]
-            box[i][0] -= span * 0.1
-            box[i][1] += span * 0.1
-        box = np.asarray(box)
+    # print points
+    # print box
+    # points[:,:-1] = ScalePoints(box, points[:,:-1])
 
-    points[:,:-1] = ScalePoints(box, points[:,:-1])
-
-    # Rescale the data to be order unity
-    fmax = np.max(np.abs(points[:,-1]))
-    points[:,-1] = points[:,-1] / fmax
+    # # Rescale the data to be order unity
+    # fmax = np.max(np.abs(points[:,-1]))
+    # points[:,-1] = points[:,-1] / fmax
 
     # Construct the bounds of the unit box
     # dimensions = [(0.,1) for i in range(len(box))]
     dimensions = getBox(points[:,:-1])
+    kernel = ConstantKernel(1.) * RBF([0.1 * (d[1] - d[0]) for d in dimensions], [(1e-5, d[1] - d[0]) for d in dimensions])
+    model = GaussianProcessRegressor(alpha=2.5, kernel=kernel,n_restarts_optimizer=100,normalize_y=False)
     # print dimensions
     # Construct the GP optimizer with the LCB acquisition function
     opt = Optimizer(dimensions, "gp",acq_func='LCB',acq_func_kwargs={'kappa':1.96})
 
+    # print points
     # Tell the optimizer abount points
-    opt.tell(points[:,:-1].tolist(),points[:,-1].tolist())
+    # opt.tell(points[:,:-1].tolist(),points[:,-1].tolist())
+
+    model.fit(points[:,:-1],points[:,-1])
+
+    opt.models = [model]
+
 
     # If we have a model constructed, then do an ask-tell loop
     if len(opt.models) != 0:
@@ -374,16 +431,24 @@ def getNewPointsBayes(inpoints,N,regrid=False,scale=None,kappa=1.96):
         # Start a list of the points
         newpoints = []
 
+        # newpoints = opt.ask(N)
         # Loop through the desired number of points
         for i in range(N):
+            print i,opt.models[-1].kernel_
             # Ask for a point
             newpoint = np.asarray([opt.ask()])
 
+            newpointVal = model.predict(newpoint)
+
+            model.fit(np.r_[points[:,:-1],newpoint],np.r_[points[:,-1],newpointVal])
+
+            opt.models = [model]
+
             # Ask the most recent model about that point
-            newpointVal = opt.models[-1].predict(newpoint)
+            # newpointVal = opt.models[-1].predict(newpoint)
 
             # Tell the optimizer about that point
-            opt.tell(newpoint.tolist(),newpointVal.tolist())
+            # opt.tell(newpoint.tolist(),newpointVal.tolist())
 
             # Add the point to the list.
             newpoints.append(newpoint)
@@ -393,10 +458,10 @@ def getNewPointsBayes(inpoints,N,regrid=False,scale=None,kappa=1.96):
     else:
         # If we don't have a model, just use the standard method.
         newpoints = opt.ask(n_points=N)
+    # print newpoints
+    # newpoints = np.asarray(unScalePoints(box,newpoints))
 
-    newpoints = np.asarray(unScalePoints(box,newpoints))
-
-    return newpoints
+    return np.asarray(newpoints)
 
 
 

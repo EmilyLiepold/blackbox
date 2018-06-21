@@ -85,7 +85,7 @@ def analyzeFit(fit,box,plot=True,showPlot=True,plotfn='fit',labels=None,searchRa
 
 	# Just to be safe, make everything a ndarray.
 	searchRange = np.asarray(searchRange)
-	# searchRange = np.asarray(box)
+	searchRange = np.asarray(box)
 	# print searchRange
 
 	# Get the number of dimensions and find the smallest grid with more than a given number of points in that dimension.
@@ -150,7 +150,7 @@ def analyzeFit(fit,box,plot=True,showPlot=True,plotfn='fit',labels=None,searchRa
 			labels = ["Parameter " + str(i+1) for i in range(d)]
 		plt.close()
 
-		chisqCutoff = - d * np.log(1 - erf(5 / 2**0.5))
+		chisqCutoff = - d * np.log(1 - erf(5 / 2**0.5)) * 50.
 		levels = [np.min(f) - d * np.log(1 - erf(II / 2**0.5)) for II in [1,2,3,4]]
 
 		fig, axes = plt.subplots(d+1,d+1)
