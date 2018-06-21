@@ -191,7 +191,7 @@ def getFitBayes(inpoints,returnStd=False,scale=None):
     # Rescale the data into the unit cube
 
 
-
+    scale = [1. for i in range(len(points[0,:]) - 1)]
     if scale is None:
         dataBox = getBox(points[:,:-1])
         trialScale = [b[1] - b[0] for b in dataBox]
@@ -326,7 +326,10 @@ def getNewPointsBayes(inpoints,N,regrid=False,scale=None,kappa=1.96):
     # Make a copy of the input data
     points = copy.deepcopy(inpoints)
 
-    BBB = 0.01
+    BBB = 1.0
+
+
+    scale = [1. for i in range(len(points[0,:]) - 1)]
 
     if scale is None:
 
