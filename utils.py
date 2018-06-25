@@ -4,6 +4,8 @@ import matplotlib.pyplot as plt
 from scipy.special import erf
 import blackbox as bb
 
+VERSION = 180625
+
 def loadFile(f):
 	F = open(f,'r')
 	outList = []
