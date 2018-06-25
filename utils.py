@@ -7,11 +7,13 @@ import blackbox as bb
 def loadFile(f):
 	F = open(f,'r')
 	outList = []
+	inFirstLine = True
 	for i, FF in enumerate(F):
-		if i == 0:
-			nCols = len(FF.split())
 		if FF[0] == "#":
 			continue
+		if inFirstLine:
+			nCols = len(FF.split())
+			inFirstLine = False
 		if len(FF.split()) == nCols:
 			outList.append(map(float,FF.split()))
 		else:
@@ -150,7 +152,7 @@ def analyzeFit(fit,box,plot=True,showPlot=True,plotfn='fit',labels=None,searchRa
 			labels = ["Parameter " + str(i+1) for i in range(d)]
 		plt.close()
 
-		chisqCutoff = - d * np.log(1 - erf(5 / 2**0.5)) * 50.
+		chisqCutoff = - d * np.log(1 - erf(5 / 2**0.5))
 		levels = [np.min(f) - d * np.log(1 - erf(II / 2**0.5)) for II in [1,2,3,4]]
 
 		fig, axes = plt.subplots(d+1,d+1)
@@ -462,7 +464,7 @@ def plotNewPointsBayes(prevPoints,newPoints,plotfn,PDF_func=chisqToPDF,labels=No
 	f = fit(sPoints).reshape(s)
 	Sig = stdFit(sPoints).reshape(s)
 
-	print np.min(f),np.mean(f),np.max(f),np.std(f)
+	# print np.min(f),np.mean(f),np.max(f),np.std(f)
 
 	# Turn the fit function grid into a PDF grid.
 	pF = PDF_func(f,d)
@@ -478,13 +480,6 @@ def plotNewPointsBayes(prevPoints,newPoints,plotfn,PDF_func=chisqToPDF,labels=No
 	chisqCutoff = - d * np.log(1 - erf(5 / 2**0.5))
 
 	levels = [- d * np.log(1 - erf(II / 2**0.5)) for II in [1,2,3,4]]
-
-	## TEMPORARY
-
-	# chisqCutoff = - d * np.log(1 - erf(8 / 2**0.5))
-
-	# levels = [- d * np.log(1 - erf(II / 2**0.5)) for II in [2,4,6,8]]
-
 
 
 
@@ -552,7 +547,7 @@ def plotNewPointsBayes(prevPoints,newPoints,plotfn,PDF_func=chisqToPDF,labels=No
 
 	fig.savefig(plotfn + "_fit.png")
 	figchisq.savefig(plotfn + "_fitErr.png")
-	# plt.show()
+	plt.show()
 	plt.close()
 
 	pass
