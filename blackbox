@@ -734,7 +734,6 @@ def runInit(Output, Bounds, N, fmt = None, log = []):
     points = getInitialPoints(box, N)
 
     points[:,log] = np.power(10,points[:,log])
-    print points.shape
 
     if fmt == None:
         header = " ".join(["Param" + str(i+1) for i in range(len(box))])
