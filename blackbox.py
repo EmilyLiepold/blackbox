@@ -919,7 +919,7 @@ if __name__ == '__main__':
         'Input', help='Filename for the input data')
 
     parser_analyze.add_argument(
-        '-p', '--plot', help='Save a plot of the fit',type=str,nargs=1)
+        '-p', '--plot', help='Save a plot of the fit',type=str)
 
     parser_analyze.add_argument(
         '-m', '--method', help='Method for choosing new points',type=str)

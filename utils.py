@@ -10,14 +10,21 @@ def loadFile(f):
 	F = open(f,'r')
 	outList = []
 	inFirstLine = True
-	for i, FF in enumerate(F):
+	lines = []
+	nCols = 0
+	for FF in F:
 		if FF[0] == "#":
 			continue
-		if inFirstLine:
-			nCols = len(FF.split())
-			inFirstLine = False
-		if len(FF.split()) == nCols:
-			outList.append(map(float,FF.split()))
+		lines.append(FF.split())
+		nCols = len(FF.split()) if len(FF.split()) > nCols else nCols
+
+	print 'nCols',nCols
+
+	for l in lines:
+		if l[0] == "#":
+			continue
+		if len(l) == nCols:
+			outList.append(map(float,l))
 		else:
 			continue
 			
@@ -34,7 +41,7 @@ def PDFtoChisq(fRed,d):
 	return np.subtract(chisq,np.min(chisq))
 
 
-def analyzeFit(fit,box,plot=True,showPlot=True,plotfn='fit',labels=None,searchRange = None,searchFraction=0.2,PDF_func=chisqToPDF,PDF_inv_func=PDFtoChisq,errFit=None):
+def analyzeFit(fit,box,plot=True,showPlot=False,plotfn='fit',labels=None,searchRange = None,searchFraction=0.2,PDF_func=chisqToPDF,PDF_inv_func=PDFtoChisq,errFit=None):
 	## This function will take a fit function which is defined over a space defined by box and return the best fit parameters over that space
 	## That fit function must take in a list of lists of parameters with a shape (n,d) and return a list with shape (n).
 	
