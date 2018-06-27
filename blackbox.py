@@ -11,7 +11,7 @@ import skopt.acquisition as acq
 import argparse
 
 from sklearn.gaussian_process import GaussianProcessRegressor
-from sklearn.gaussian_process.kernels import RBF, ConstantKernel,WhiteKernel
+from sklearn.gaussian_process.kernels import RBF, ConstantKernel,WhiteKernel, Matern
 
 
 VERSION = 180625
@@ -198,34 +198,79 @@ def getFitBayes(inpoints,returnStd=False,scale=None):
     # Copy the input data.
     points = copy.deepcopy(inpoints)
 
+    ## Mark down the boundaries of the box
+    box = getBox(points[:,:-1])
+
+    ## Find the minimum in the data and invert the data into a cube
+    ## NB: We are not rescaling into a cube here.
+    MIN = -np.min(points[:,-1])
+    points[:,-1] = np.divide(MIN,points[:,-1])
+    
+    ## Scale the parameters into the unit cube
+    points[:,:-1] = ScalePoints(box,points[:,:-1])
+
+    ## Get the boundaries of the scaled data (0 and 1)
     dimensions = getBox(points[:,:-1])
 
-    if scale is None:
-        scale = [0.1 * (d[1] - d[0]) for d in dimensions]
+    ## Construct the Gaussian Kernel with some white noise
+    kernel = RBF([0.1 * (d[1] - d[0]) for d in dimensions], [(1e-5, d[1] - d[0]) for d in dimensions]) * ConstantKernel(1.0, (1e-5, 1e8))  + WhiteKernel(noise_level_bounds = (1e-5,1e1))
 
+    ## Construct the Regressor object using that kernel.
+    model = GaussianProcessRegressor(alpha=1e-10, kernel=kernel,n_restarts_optimizer=2,normalize_y=True)
 
-    kernel = RBF([0.1 * (d[1] - d[0]) for d in dimensions], [(1e-5, d[1] - d[0]) for d in dimensions]) * ConstantKernel(1.0, (1e-5, 1e8)) + WhiteKernel(noise_level_bounds=(1e-5,1e1))
-
-    model = GaussianProcessRegressor(alpha=1e-10, kernel=kernel,n_restarts_optimizer=1000,normalize_y=True)
-
+    ## Fit the model to the data    
     model.fit(points[:,:-1],points[:,-1])
 
+    ## Construct the functions which will be returned.
     def outFit(x):
+        
+        ## Make sure that the input is an array with the proper dimensions.
         if type(x) is not np.ndarray:
             x = np.asarray(x)
         if len(x.shape) == 1:
             x = np.asarray([x])
         
+        ## Scale the asked point and make it an array
+        x = ScalePoints(box,x)
+        x = np.asarray(x)
+
+        ## Get the prediction from the model
         y_pred = model.predict(x,return_std=False)
 
-        return y_pred 
+        ## If a predicted point is greater than 0 
+        ## (overflow, since we've inverted the objective function),
+        ## make it an arbitrarily small number
+
+        y_pred[y_pred > 0] = -1e-30
+
+        ## Return the objective function.
+        y_pred = np.divide(MIN,y_pred)
+
+        return y_pred
+
     if returnStd:
         def outFitSigma(x):
-            x = np.asarray(x)
+            ## Make sure that the input is an array with the proper dimensions.
+            if type(x) is not np.ndarray:
+                x = np.asarray(x)
             if len(x.shape) == 1:
                 x = np.asarray([x])
 
+            ## Scale the asked point and make it an array
+            x = ScalePoints(box,x)
+            x = np.asarray(x)
+
+            ## Get the prediction from the model
             y_pred, sigma = model.predict(x, return_std=True)
+
+            ## If a predicted point is less than 0 
+            ## (overflow, since we've inverted the objective function),
+            ## make it an arbitrarily small number
+            y_pred[y_pred > 0] = -1e-30
+
+            ## Calculate the error in the objective function.
+            sigma = np.abs(np.multiply(np.divide(MIN,np.multiply(y_pred,y_pred)),sigma))
+
             return sigma
 
         return outFit, outFitSigma
@@ -235,7 +280,9 @@ def getFitBayes(inpoints,returnStd=False,scale=None):
 
 
 
-def getNextPoints(inpoints,N, fitkwargs = {}, ptkwargs = {},method='rbf',plot=False,plotfn='next'): #optParams = {'p': None, 'rho': None, 'nrand': None, 'randfrac': None}):
+
+def getNextPoints(inpoints,N, fitkwargs = {}, ptkwargs = {},method='rbf',plot=False,plotfn='next'):
+    #optParams = {'p': None, 'rho': None, 'nrand': None, 'randfrac': None}):
     ## This function implements the logic required to grab the next set of points using the standard rbf method.
     ## The required inputs are 
     ##      inpoints, a list of points with shape (n,d+1), which are the parameters and measured function at n sample points
@@ -281,26 +328,29 @@ def getNextPoints(inpoints,N, fitkwargs = {}, ptkwargs = {},method='rbf',plot=Fa
     ## Return (with dimensions) the new points
     return(newpoints)
 
-def getNextPointsBayes(inpoints,N,regrid=False,scale=None,kappa=1.96,rho0 = 0.5, p = 1.0):
+def getNextPointsBayes(inpoints,N,regrid=False,scale=None,kappa=1.96,rho0 = 1.0, p = 0.8):
 
     # Make a copy of the input data
     points = copy.deepcopy(inpoints)
 
     ###### RESCALE THE DATA TO A UNIT HYPERCUBE
-
     box = getBox(points[:,:-1])
 
     points[:,:-1] = ScalePoints(box,points[:,:-1])
 
+    ## Find the minimum in the data and invert the data into a cube
+    ## NB: We are not rescaling into a cube here.
+    MIN = -np.min(points[:,-1])
+    points[:,-1] = np.divide(MIN,points[:,-1])
+
     ###### GRAB THE NEW BOUNDS
     dimensions = getBox(points[:,:-1])
 
-
     ###### Build a guess for the kernel which has length scale 1/10 of the length of the box and white noise up to 10
-    kernel = RBF([0.1 * (d[1] - d[0]) for d in dimensions], [(1e-5, d[1] - d[0]) for d in dimensions]) * ConstantKernel(1.0, (1e-5, 1e8)) + WhiteKernel(noise_level_bounds = (1e-5,1e1))
+    kernel = RBF([0.1 * (d[1] - d[0]) for d in dimensions], [(1e-5, d[1] - d[0]) for d in dimensions]) * ConstantKernel(1.0, (1e-5, 1e8))  + WhiteKernel(noise_level_bounds = (1e-5,1e1))
 
     ###### Construct the GPR with that kernel
-    model = GaussianProcessRegressor(alpha=1e-10, kernel=kernel,n_restarts_optimizer=10,normalize_y=True)
+    model = GaussianProcessRegressor(alpha=1e-10, kernel=kernel,n_restarts_optimizer=2,normalize_y=True)
     
     
     
@@ -365,7 +415,7 @@ def getNextPointsBayes(inpoints,N,regrid=False,scale=None,kappa=1.96,rho0 = 0.5,
             print "Couldn't find enough points. Reducing the search distance."
 
             rho0 *= 0.9
-            rr = ((rho0*((n + 1.) / (N))**p)/(v1*(len(points))))**(1./len(dimensions))
+            rr = ((rho0)/(v1*(len(points))))**(1./len(dimensions))
 
     ###### Slice the list of test points appropriately
     X = np.asarray(X)[:,0,:]
@@ -381,9 +431,7 @@ def getNextPointsBayes(inpoints,N,regrid=False,scale=None,kappa=1.96,rho0 = 0.5,
     v0 = values[np.argsort(values)[:n_points]]
 
 
-    ###### Construct a list of constraints on the new points.
-    cons = [{'type': 'ineq', 'fun': lambda x, localk=k: np.linalg.norm(np.subtract(x, points[localk, :-1])) - rr}
-            for k in range(len(points))]
+
 
     ###### Loop through all of the new points
     ###### Hang on to an index over x0
@@ -394,10 +442,15 @@ def getNextPointsBayes(inpoints,N,regrid=False,scale=None,kappa=1.96,rho0 = 0.5,
         ###### Keep track of the number of attempts we've made on a particular n
         attempts = 0        
 
-        for i in range(N):
+        ###### Update the target distance
 
-            ###### Update the target distance
-            rr = ((rho0*((n + 1.) / (N))**p)/(v1*(len(points))))**(1./len(dimensions))
+        rr = ((rho0*((n + 1.) / (N))**p)/(v1*(len(points))))**(1./len(dimensions))
+
+        ###### Construct a list of constraints on the new points.
+        cons = [{'type': 'ineq', 'fun': lambda x, localk=k: np.linalg.norm(np.subtract(x, points[localk, :-1])) - rr}
+                for k in range(len(points))]
+
+        for i in range(N):          
 
             ###### Try to minimize the LCB given a particular test point.
             try:
@@ -415,6 +468,10 @@ def getNextPointsBayes(inpoints,N,regrid=False,scale=None,kappa=1.96,rho0 = 0.5,
                     rho0 *= 0.9
                     trialIndex -= attempts
                     attempts = 0
+                    
+                    rr = ((rho0*((n + 1.) / (N))**p)/(v1*(len(points))))**(1./len(dimensions))
+                    cons = [{'type': 'ineq', 'fun': lambda x, localk=k: np.linalg.norm(np.subtract(x, points[localk, :-1])) - rr}
+                        for k in range(len(points))]
 
 
                 
@@ -427,12 +484,8 @@ def getNextPointsBayes(inpoints,N,regrid=False,scale=None,kappa=1.96,rho0 = 0.5,
         newpoint = np.r_[cand_xs, model.predict(cand_xs.reshape(1,-1))]
         points = np.r_[points,newpoint.reshape(1,-1)]
 
-        ###### Add a new constraint for the new point.
-        cons.append({'type': 'ineq', 'fun': lambda x: np.linalg.norm(np.subtract(x, points[-1, :-1])) - rr})
-
         ###### Add the new point to the list of new points
         newpoints.append(cand_xs)
-
 
     ###### Return the original dimensions to the point.
     newpoints = np.asarray(newpoints)
