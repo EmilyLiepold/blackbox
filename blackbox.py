@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 import sys
 import multiprocessing as mp
 import numpy as np
@@ -6,6 +7,14 @@ import copy
 import blackboxhelper as bbh
 import utils as u
 from skopt import Optimizer
+import skopt.acquisition as acq
+import argparse
+
+from sklearn.gaussian_process import GaussianProcessRegressor
+from sklearn.gaussian_process.kernels import RBF, ConstantKernel,WhiteKernel, Matern
+
+
+VERSION = 180625
 
 def get_default_executor():
     """
@@ -188,94 +197,92 @@ def getFitBayes(inpoints,returnStd=False,scale=None):
 
     # Copy the input data.
     points = copy.deepcopy(inpoints)
-    # Rescale the data into the unit cube
 
+    ## Mark down the boundaries of the box
+    box = getBox(points[:,:-1])
 
-    scale = [1. for i in range(len(points[0,:]) - 1)]
-    if scale is None:
-        dataBox = getBox(points[:,:-1])
-        trialScale = [b[1] - b[0] for b in dataBox]
-        # Calculate the best fit and get the scale from its error bars.
-        trialfit = getFit(points,fitkwargs={'scale':trialScale},method='bayes')
-        BF = u.analyzeFit(trialfit,dataBox,plot=False)
-        scale = [b[1] for b in BF]
-        # Rescale the data into the unit cube
-        # dataBox = getBox(points[:,:-1])
-        box = np.asarray([[dataBox[i][0], dataBox[i][0] + scale[i]] for i in range(len(dataBox))])
+    ## Find the minimum in the data and invert the data into a cube
+    ## NB: We are not rescaling into a cube here.
+    MIN = -np.min(points[:,-1])
+    points[:,-1] = np.divide(MIN,points[:,-1])
+    
+    ## Scale the parameters into the unit cube
+    points[:,:-1] = ScalePoints(box,points[:,:-1])
 
-        box = getBox(points[:,:-1])
-        # print 'initBox'
-        # print box
-
-        # box = expandBox(box,0.1)
-        # print 'expandedBox'
-        # print box
-    else:
-        dataBox = getBox(points[:,:-1])
-        box = np.asarray([[dataBox[i][0], dataBox[i][0] + scale[i]] for i in range(len(dataBox))])
-
-
-    points[:,:-1] = ScalePoints(box, points[:,:-1])
-
-    # Rescale the data to be order unity
-    fmax = np.max(np.abs(points[:,-1]))
-    points[:,-1] = points[:,-1] / fmax
-
-    # Construct the bounds of the unit box
-    # dimensions = [(0.,1) for i in range(len(box))]
-    # print 'd1'
-    # print dimensions
+    ## Get the boundaries of the scaled data (0 and 1)
     dimensions = getBox(points[:,:-1])
-    dimensions = expandBox(dimensions,0.01)
-    # print 'd2'
-    # print dimensions
 
-    # Construct the GP optimizer with the LCB acquisition function
-    opt = Optimizer(dimensions, "gp",acq_func='LCB')
+    ## Construct the Gaussian Kernel with some white noise
+    kernel = RBF([0.1 * (d[1] - d[0]) for d in dimensions], [(1e-5, d[1] - d[0]) for d in dimensions]) * ConstantKernel(1.0, (1e-5, 1e8))  + WhiteKernel(noise_level_bounds = (1e-5,1e1))
 
-    # Tell the optimizer abount inpoints
-    opt.tell(points[:,:-1].tolist(),points[:,-1].tolist())
+    ## Construct the Regressor object using that kernel.
+    model = GaussianProcessRegressor(alpha=1e-10, kernel=kernel,n_restarts_optimizer=2,normalize_y=True)
 
-    # See if we constructed a model
-    if len(opt.models) == 0:
-        print('Could not construct a model for that data! Oh well.')
-        return -1
-    else:
+    ## Fit the model to the data    
+    model.fit(points[:,:-1],points[:,-1])
 
-        # If we did, get that model and construct wrappers which can
-        # be returned
+    ## Construct the functions which will be returned.
+    def outFit(x):
+        
+        ## Make sure that the input is an array with the proper dimensions.
+        if type(x) is not np.ndarray:
+            x = np.asarray(x)
+        if len(x.shape) == 1:
+            x = np.asarray([x])
+        
+        ## Scale the asked point and make it an array
+        x = ScalePoints(box,x)
+        x = np.asarray(x)
 
-        model = opt.models[-1]
+        ## Get the prediction from the model
+        y_pred = model.predict(x,return_std=False)
 
-        def outFit(x):
+        ## If a predicted point is greater than 0 
+        ## (overflow, since we've inverted the objective function),
+        ## make it an arbitrarily small number
+
+        y_pred[y_pred > 0] = -1e-30
+
+        ## Return the objective function.
+        y_pred = np.divide(MIN,y_pred)
+
+        return y_pred
+
+    if returnStd:
+        def outFitSigma(x):
+            ## Make sure that the input is an array with the proper dimensions.
             if type(x) is not np.ndarray:
                 x = np.asarray(x)
             if len(x.shape) == 1:
                 x = np.asarray([x])
-            
-            x = np.asarray(ScalePoints(box,x))
-            x_model = opt.space.transform(x.tolist())
-            y_pred = model.predict(x_model,return_std=False)
-            return y_pred * fmax
-        if returnStd:
-            def outFitSigma(x):
-                x = np.asarray(x)
-                if len(x.shape) == 1:
-                    x = np.asarray([x])
-                x = np.asarray(ScalePoints(box,x))
 
-                x_model = opt.space.transform(x.tolist())
-                y_pred, sigma = model.predict(x_model, return_std=True)
-                return sigma * fmax
+            ## Scale the asked point and make it an array
+            x = ScalePoints(box,x)
+            x = np.asarray(x)
 
-            return outFit, outFitSigma
-        else:
-            return outFit
+            ## Get the prediction from the model
+            y_pred, sigma = model.predict(x, return_std=True)
+
+            ## If a predicted point is less than 0 
+            ## (overflow, since we've inverted the objective function),
+            ## make it an arbitrarily small number
+            y_pred[y_pred > 0] = -1e-30
+
+            ## Calculate the error in the objective function.
+            sigma = np.abs(np.multiply(np.divide(MIN,np.multiply(y_pred,y_pred)),sigma))
+
+            return sigma
+
+        return outFit, outFitSigma
+    else:
+        return outFit
 
 
 
 
-def getNextPoints(inpoints,N, fitkwargs = {}, ptkwargs = {},method='rbf',plot=False,plotfn='next'): #optParams = {'p': None, 'rho': None, 'nrand': None, 'randfrac': None}):
+
+def getNextPoints(inpoints,N, fitkwargs = {}, ptkwargs = {},method='rbf',plot=False,plotfn='next'):
+    #optParams = {'p': None, 'rho': None, 'nrand': None, 'randfrac': None}):
     ## This function implements the logic required to grab the next set of points using the standard rbf method.
     ## The required inputs are 
     ##      inpoints, a list of points with shape (n,d+1), which are the parameters and measured function at n sample points
@@ -300,8 +307,8 @@ def getNextPoints(inpoints,N, fitkwargs = {}, ptkwargs = {},method='rbf',plot=Fa
         # Accumulate the parameters for the fit and perform the fit
         fit = getFit(inpoints,fitkwargs=fitkwargs,method=method)
 
-        # Accumulate the keywords for the getNewPoints function and run that.
-        points, newpoints = getNewPoints(fit,inpoints,N, **ptkwargs)
+        # Accumulate the keywords for the getNextPointsRBF function and run that.
+        points, newpoints = getNextPointsRBF(fit,inpoints,N, **ptkwargs)
         inpoints[:,:-1] = unScalePoints(box, inpoints[:,:-1])
         
         newpoints = np.asarray(unScalePoints(box, newpoints))
@@ -312,7 +319,7 @@ def getNextPoints(inpoints,N, fitkwargs = {}, ptkwargs = {},method='rbf',plot=Fa
 
     elif method == 'bayes':
 
-        newpoints = getNewPointsBayes(inpoints,N, **fitkwargs)
+        newpoints = getNextPointsBayes(inpoints,N, **fitkwargs)
 
         if plot:
             u.plotNewPointsBayes(inpoints,newpoints,plotfn)
@@ -321,89 +328,175 @@ def getNextPoints(inpoints,N, fitkwargs = {}, ptkwargs = {},method='rbf',plot=Fa
     ## Return (with dimensions) the new points
     return(newpoints)
 
-def getNewPointsBayes(inpoints,N,regrid=False,scale=None,kappa=1.96):
+def getNextPointsBayes(inpoints,N,regrid=False,scale=None,kappa=1.96,rho0 = 1.0, p = 0.8):
 
     # Make a copy of the input data
     points = copy.deepcopy(inpoints)
 
-    BBB = 1.0
+    ###### RESCALE THE DATA TO A UNIT HYPERCUBE
+    box = getBox(points[:,:-1])
 
+    points[:,:-1] = ScalePoints(box,points[:,:-1])
 
-    scale = [1. for i in range(len(points[0,:]) - 1)]
+    ## Find the minimum in the data and invert the data into a cube
+    ## NB: We are not rescaling into a cube here.
+    MIN = -np.min(points[:,-1])
+    points[:,-1] = np.divide(MIN,points[:,-1])
 
-    if scale is None:
-
-        dataBox = getBox(points[:,:-1])
-        # Calculate the best fit and get the scale from its error bars.
-        trialfit = getFit(points,fitkwargs={},method='bayes')
-        BF = u.analyzeFit(trialfit,dataBox,plot=False)
-        scale = [b[1] for b in BF]
-        # Rescale the data into the unit cube
-        # dataBox = getBox(points[:,:-1])
-        box = np.asarray([[dataBox[i][0], dataBox[i][0] + scale[i] * BBB] for i in range(len(dataBox))])
-        
-    else:
-
-        dataBox = getBox(points[:,:-1])
-        box = np.asarray([[dataBox[i][0], dataBox[i][0] + scale[i] * BBB] for i in range(len(dataBox))])
-
-    
-    if regrid:
-        for i in range(len(box)):
-            span = box[i][1] - box[i][0]
-            box[i][0] -= span * 0.1
-            box[i][1] += span * 0.1
-        box = np.asarray(box)
-
-    points[:,:-1] = ScalePoints(box, points[:,:-1])
-
-    # Rescale the data to be order unity
-    fmax = np.max(np.abs(points[:,-1]))
-    points[:,-1] = points[:,-1] / fmax
-
-    # Construct the bounds of the unit box
-    # dimensions = [(0.,1) for i in range(len(box))]
+    ###### GRAB THE NEW BOUNDS
     dimensions = getBox(points[:,:-1])
-    # print dimensions
-    # Construct the GP optimizer with the LCB acquisition function
-    opt = Optimizer(dimensions, "gp",acq_func='LCB',acq_func_kwargs={'kappa':1.96})
 
-    # Tell the optimizer abount points
-    opt.tell(points[:,:-1].tolist(),points[:,-1].tolist())
+    ###### Build a guess for the kernel which has length scale 1/10 of the length of the box and white noise up to 10
+    kernel = RBF([0.1 * (d[1] - d[0]) for d in dimensions], [(1e-5, d[1] - d[0]) for d in dimensions]) * ConstantKernel(1.0, (1e-5, 1e8))  + WhiteKernel(noise_level_bounds = (1e-5,1e1))
 
-    # If we have a model constructed, then do an ask-tell loop
-    if len(opt.models) != 0:
-        
-        # Start a list of the points
-        newpoints = []
+    ###### Construct the GPR with that kernel
+    model = GaussianProcessRegressor(alpha=1e-10, kernel=kernel,n_restarts_optimizer=2,normalize_y=True)
+    
+    
+    
+    newpoints = []
 
-        # Loop through the desired number of points
-        for i in range(N):
-            # Ask for a point
-            newpoint = np.asarray([opt.ask()])
+    ###### Get the volume constant for a d-dimensional ball
+    v1 = getBallVolume(len(dimensions)) 
 
-            # Ask the most recent model about that point
-            newpointVal = opt.models[-1].predict(newpoint)
+    ###### The volume of the unit cube is 1.    
+    ###### The volume of each ball is v1 * rr^d 
+    ###### We want to find rr such that the balls occupy the fraction rho0 of the box
 
-            # Tell the optimizer about that point
-            opt.tell(newpoint.tolist(),newpointVal.tolist())
+    rr = ((rho0)/(v1*(len(points))))**(1./len(dimensions))
 
-            # Add the point to the list.
-            newpoints.append(newpoint)
+    ###### Fit the model to the currently known points.
+    model.fit(points[:,:-1],points[:,-1])
 
-        # Turn the list into an ndarray and slice off the extraneous dimension
-        newpoints = np.asarray(newpoints)[:,0,:]
-    else:
-        # If we don't have a model, just use the standard method.
-        newpoints = opt.ask(n_points=N)
+    ###### Just to be safe, we're going to generate N^2 test points
+    n_points = N * N
 
-    newpoints = np.asarray(unScalePoints(box,newpoints))
+    ###### We'll also stick with the 99% CI for the LCB.
+    acq_func_kwargs={'kappa':1.96}
+
+
+
+    ###### Start a list of test points
+    X = []
+
+    ###### run though our N^2 points
+    for i in range(n_points):
+
+        ###### Try to find a point up to 1000 times
+        for j in range(1000):
+
+            ###### Assume that the point will work until proven otherwise
+            goodPt = True
+
+            ###### Grab a random point in the space
+            pt = np.random.rand(1,len(dimensions))
+            xx = np.asarray(unScalePoints(dimensions,pt))
+
+            ###### Loop through the old points
+            for k in range(len(points)):
+                ###### Find the distance between the test point and the preexisting point.
+                c = np.linalg.norm(np.subtract(xx, points[k, :-1])) - rr
+
+                ###### If that distance is less than rr, then drop that point
+                if c < 0:
+                    goodPt = False
+                    break
+            ###### If the point is far enough from all of the preexisting points, break out of the loop
+            if goodPt == True:
+                break
+
+        ###### Add the point to list of trial points.
+        X.append(xx)
+
+        ###### If the point (after 1000 samples) was too close to any other points, 
+        ###### throw a warning and reduce the cutoff distance slightly.
+        if goodPt == False:
+
+            print "Couldn't find enough points. Reducing the search distance."
+
+            rho0 *= 0.9
+            rr = ((rho0)/(v1*(len(points))))**(1./len(dimensions))
+
+    ###### Slice the list of test points appropriately
+    X = np.asarray(X)[:,0,:]
+
+    ###### Start the list of newpoints
+    next_xs_ = []
+    
+    ###### Find the LCB value at each of the test points and sort the test points by those values
+    values = acq._gaussian_acquisition(
+        X=X, model=model,acq_func="LCB",acq_func_kwargs=acq_func_kwargs)
+   
+    x0 = X[np.argsort(values)[:n_points]]
+    v0 = values[np.argsort(values)[:n_points]]
+
+
+
+
+    ###### Loop through all of the new points
+    ###### Hang on to an index over x0
+    trialIndex = 0
+    for n in range(N):
+        print n
+
+        ###### Keep track of the number of attempts we've made on a particular n
+        attempts = 0        
+
+        ###### Update the target distance
+
+        rr = ((rho0*((n + 1.) / (N))**p)/(v1*(len(points))))**(1./len(dimensions))
+
+        ###### Construct a list of constraints on the new points.
+        cons = [{'type': 'ineq', 'fun': lambda x, localk=k: np.linalg.norm(np.subtract(x, points[localk, :-1])) - rr}
+                for k in range(len(points))]
+
+        for i in range(N):          
+
+            ###### Try to minimize the LCB given a particular test point.
+            try:
+                results = op.minimize(acq.gaussian_acquisition_1D,x0[trialIndex],args=(model, None, "LCB", acq_func_kwargs, False),method="SLSQP",bounds=dimensions,constraints = cons, options={'maxiter':100})
+                trialIndex += 1
+                break
+            ###### If the fit didn't work, move onto the next trial point.
+            except:
+                attempts += 1
+                trialIndex += 1
+
+                ###### If we've run through quite a few attempts, pull the target distance down and retry the previous test points
+                if attempts >= N / 2:
+                    print "I ran into an issue while minimizing. I'm reducing the search distance and trying again!"
+                    rho0 *= 0.9
+                    trialIndex -= attempts
+                    attempts = 0
+                    
+                    rr = ((rho0*((n + 1.) / (N))**p)/(v1*(len(points))))**(1./len(dimensions))
+                    cons = [{'type': 'ineq', 'fun': lambda x, localk=k: np.linalg.norm(np.subtract(x, points[localk, :-1])) - rr}
+                        for k in range(len(points))]
+
+
+                
+
+        ###### Pull the results from the minimization.
+        cand_xs = np.array(results.x)
+        cand_acqs = np.array(results.fun)
+
+        ###### Add the minimizing point to the list of points.
+        newpoint = np.r_[cand_xs, model.predict(cand_xs.reshape(1,-1))]
+        points = np.r_[points,newpoint.reshape(1,-1)]
+
+        ###### Add the new point to the list of new points
+        newpoints.append(cand_xs)
+
+    ###### Return the original dimensions to the point.
+    newpoints = np.asarray(newpoints)
+    newpoints = unScalePoints(box,newpoints)
+    newpoints = np.asarray(newpoints)
 
     return newpoints
 
 
 
-def getNewPoints(fit,currentPoints,batch,rho0=0.5,p=1.0):
+def getNextPointsRBF(fit,currentPoints,batch,rho0=0.5,p=1.0):
     ## This function performs the logic of getting new points from the provided fit and existing points.
     ## The basic logic here follows CORS.
     ## fit should be a function which will take in a list of parameters and return a number.
@@ -544,7 +637,7 @@ def search(f, box, n, m, batch, resfile,
         prevFit = fit
         prevFmax = fmax
 
-        points, newpoints = getNewPoints(fit,points,batch,rho0=rho0, p=p)
+        points, newpoints = getNextPointsRBF(fit,points,batch,rho0=rho0, p=p)
 
         with executor() as e:
             points[n+batch*i:n+batch*(i+1), -1] = list(e.map(f, list(map(cubetobox, points[n+batch*i:n+batch*(i+1), 0:-1]))))/fmax
@@ -676,83 +769,64 @@ def rbf(points, T):
 
     return fit
 
-def runInit(args):
-    if len(args) < 6:
-        print("Not enough arguments! The command should look like:")
-        print("blackbox.py init N out_filename xmin xmax (ymin ymax)...") 
-        exit(1)
-    if len(args) % 2 == 1:
-        print("Not the right number of arguments! The command should look like:")
-        print("blackbox.py init N out_filename xmin xmax (ymin ymax)...") 
-        print("Make sure that you have both a lower and upper bound for each dimension.")
+def runInit(Output, Bounds, N, fmt = None, log = []):
+
+    if len(Bounds) % 2 == 1:
+        print("Found an odd number of bounds! Make sure that you've included both a lower and an upper bound for each dimension!")
         sys.exit(1)
 
-    rawbox = []
-    for i in range(len(args) - 4):
-        try:
-            rawbox.append(float(args[i+4]))
-        except ValueError:
-            print(args[i+4] +" doesn't look like a float to me...")
-            exit(1)
+    if fmt is not None and len(fmt) != len(Bounds) / 2:
+        print("The number of labels doesn't seem to match the number of dimensions!")
+        sys.exit(1)
 
-    box = [[rawbox[2 * i], rawbox[2 * i + 1]] for i in range(len(rawbox) / 2)]
 
-    try:
-        N = int(args[2])
-    except ValueError:
-        print(args[2] + "doesn't look like an integer to me.")
-        exit(1)
+    box = np.asarray([[Bounds[2 * i], Bounds[2 * i + 1]] for i in range(len(Bounds) / 2)])
+
+    box[log] = np.log10(box[log])
 
     points = getInitialPoints(box, N)
-    fname = args[3]
 
-    header = " ".join(["Param" + str(i+1) for i in range(len(box))])
-    np.savetxt(fname,points,header=header)
+    points[:,log] = np.power(10,points[:,log])
+
+    if fmt == None:
+        header = " ".join(["Param" + str(i+1) for i in range(len(box))])
+        np.savetxt(Output,points,header=header)
+    else:
+        def formatLine(line):
+            out = "".join([fmt[i] + ",%.2e " % line[i] for i in range(len(line))]) + "\n"
+            return(out)
+
+        header = "# " + " ".join(fmt) + "\n"
+        out = open(Output,'w')
+        out.write(header)
+        for f in points:
+            out.write(formatLine(f))
+        out.close()
 
     pass
 
-def runNext(args):
-    p = None
-    rho0 = None
-    nrand = None
-    nrand_frac = None
-    plot = False
-    plotfn = ''
-    method = 'rbf'
-    allowedParams = ['p', 'rho', 'nrand', 'randfrac', 'method','plot']
-    # optParams = {'p': p, 'rho': rho0, 'nrand': nrand, 'randfrac': nrand_frac, 'method': method}
+def runNext(N, Input, Output, method = 'bayes', plot = None, args = [],fmt = None, log=[]):
+
+    allowedParams = ['p', 'rho', 'nrand', 'randfrac', 'method']
     optParams = {}
 
-
-    if len(args) < 5:
-        print("Not enough arguments! The command should look like ")
-        print("blackbox.py next N in_filename out_filename (params)")
-        exit(1)
-
-    try:
-        N = int(args[2])
-    except ValueError:
-        print(args[2] + "doesn't look like an integer to me.")
-        exit(1)
-
-    infname = args[3]
-    outfname = args[4]
-
-    if len(args) % 2 == 0:
+    if len(args) % 2 != 0:
         print("Incorrect number of arguments! Each optional param should have both a name and a value.")
         exit(1)
 
 
-    for i in range((len(args) - 5) / 2):
-        if args[5 + 2 *i] in allowedParams:
-            optParams[args[5 + 2 *i]] = (args[6 + 2 *i])
+    for i in range(len(args) / 2):
+        if args[2 *i] in allowedParams:
+            optParams[args[2 *i]] = (args[1 +  2 *i])
         else:
-            print(args[5 + 2 * i] + "isn't a parameter that I recognize! Please try something else.")
+            print(args[2 * i] + "isn't a parameter that I recognize! Please try something else.")
             exit(1)
 
+    inpoints = u.loadFile(Input)
 
-	inpoints = u.loadFile(infname)
-
+    if fmt is not None and len(fmt) != len(inpoints[0]) - 1:
+        print("The number of labels doesn't match the number of parameters!")
+        exit(1)
 
 
     ptkwargs = {}
@@ -761,84 +835,82 @@ def runNext(args):
     if 'rho' in optParams: ptkwargs['rho0'] = float(optParams['rho'])
     if 'nrand' in optParams: ptkwargs['nrand_frac'] = float(optParams['nrand'])
     if 'randfrac' in optParams: ptkwargs['nrand'] = float(optParams['randfrac'])
-    if 'plot' in optParams:
+    
+    if plot is not None:
+        plotfn = str(plot)
         plot = True
-        plotfn = optParams['plot']
+    else:
+        plotfn = None
+        plot = False
 
-    method = optParams['method'] if 'method' in optParams else 'rbf'
-
+    inpoints[:,log] = np.log10(inpoints[:,log])
 
     newpoints =  getNextPoints(inpoints, N,fitkwargs=fitkwargs,ptkwargs=ptkwargs, method=method,plot=plot,plotfn=plotfn)
 
-    header = " ".join(["Param" + str(i+1) for i in range(len(newpoints[0]))])
-    np.savetxt(outfname, newpoints,header=header)
+    inpoints[:,log] = np.power(10,inpoints[:,log])
+
+    if fmt == None:
+        header = " ".join(["Param" + str(i+1) for i in range(len(newpoints[0]))])
+        np.savetxt(Output,newpoints,header=header)
+    else:
+        def formatLine(line):
+            out = "".join([fmt[i] + ",%.2e " % line[i] for i in range(len(line))]) + "\n"
+            return(out)
+
+        header = "# " + " ".join(fmt) + "\n"
+        out = open(Output,'w')
+        out.write(header)
+        for f in newpoints:
+            out.write(formatLine(f))
+        out.close()
+
 
     pass
 
-def runAnalysis(args):
+def runAnalysis(Input, plot=None, method = 'bayes', err = False,labels = None,log=[]):
 
-    if len(args) < 3:
-        print("Not enough arguments! The command should look like ")
-        print("blackbox.py analyze in_filename (params)")
-        exit(1)
 
-    infname = args[2]
-    inpoints = u.loadFile(infname)
-    box = getBox(inpoints[:,:-1])
-    # box = expandBox(box,0.1)
+    inpoints = u.loadFile(Input)
     
-    plot = False
-    plotfn = infname + ".png"
-    method = 'rbf'
-    foundLabel = False
 
-    getErr = False
-    errFit = None
+
+    if plot == None:
+        plotfn = Input + ".png"
+        plot = False
+    else:
+        plotfn = plot + ".png"
+        plot = True
+
+
+    inpoints[:,log] = np.log10(inpoints[:,log])    
+
+    box = getBox(inpoints[:,:-1])
+
     d = len(inpoints[0]) - 1
 
-    argList = args[3:]
-    for i in range(len(argList)):
-        if argList[i] == 'plot':
-            plot = True
-            continue
-        if argList[i] == 'plotfn':
-            plotfn = argList[i+1]
-            continue
-        if argList[i] == "label":
-            foundLabel = True
-            labels = argList[(i + 1):(i + d + 1)]
-            continue
-        if argList[i] == "bayes":
-            method = 'bayes'
-        if argList[i] == "rbf":
-            method = 'rbf'
-        if argList[i] == "err":
-            getErr = True
-
-
-
     print('Performing a '+method+' style fit')
-    # if method == 'rbf':
-    if getErr:
-        fit, errFit = getFit(inpoints,fitkwargs={'returnStd':getErr},method=method)
+
+    if err:
+        fit, errFit = getFit(inpoints,fitkwargs={'returnStd':err},method=method)
     else:
         fit = getFit(inpoints,fitkwargs={},method=method)
-        
-    # elif method == 'bayes':
-        # fit = getFitBayes(inpoints)
+        errFit = None
 
-    # unitbox = np.asarray([[0.,1.],[0.,1.]])
-    if foundLabel:
+
+    if labels is not None:
         BF = u.analyzeFit(fit,box,plot=plot,plotfn=plotfn,labels=labels,errFit=errFit)#,extent=box)
     else:
         BF = u.analyzeFit(fit,box,plot=plot,plotfn=plotfn,errFit=errFit)
 
     BF = np.asarray(BF)
+
+    A = np.power(10,BF[log,0] + BF[log,1])
+    B = np.power(10,BF[log,0] - BF[log,1])
+    BF[log,0] = 0.5 * np.add(A,B)
+    BF[log,1] = 0.5 * np.subtract(A,B)
     
     print BF
     return BF
-
-    pass
 
 
 
@@ -846,14 +918,80 @@ if __name__ == '__main__':
 
     commands = {'init': runInit, 'next': runNext, 'analyze' : runAnalysis}
 
-    if len(sys.argv) == 1:
-        print("No arguments provided, so I'm not sure what you want me to do.")
-        exit(1)
-    else:
-        command = sys.argv[1]
+    parser = argparse.ArgumentParser()
+    subparsers = parser.add_subparsers(dest='subparser')
 
-    if command in commands:
-        commands[command](sys.argv)
-    else:
-        print("I don't recognize that command! Please try something else.")
-        exit(1)
+    parser_init = subparsers.add_parser('init', help='Get an initial set of points')
+
+    parser_init.add_argument(
+        'N', help='Number of points to generate',type=int)
+
+    parser_init.add_argument(
+        'Output', help='Target filename for the output data',type=str)
+
+    parser_init.add_argument(
+        'Bounds', help='Pairs of lower and upper bounds',nargs='*',type=float)
+
+    parser_init.add_argument(
+        '-f', '--fmt', help='List of labels used in the output file', required=False,nargs='*',type=str)
+
+    parser_init.add_argument(
+        '-l', '--log', help='List of parameters (starting at 0) whose sampling will be in log-space', required=False,nargs='*',type=int)
+
+    parser_next = subparsers.add_parser('next', help='Get the next set of points')
+
+    parser_next.add_argument(
+        'N', help='Number of points to generate',type=int)
+
+    parser_next.add_argument(
+        'Input', help='Filename for the input data',type=str)
+
+    parser_next.add_argument(
+        'Output', help='Target filename for the output data',type=str)
+
+    parser_next.add_argument(
+        '-m', '--method', help='Method for choosing new points',type=str)
+
+    parser_next.add_argument(
+        '-p', '--plot', help='Base Filename for plots',type=str)
+
+    parser_next.add_argument(
+        '-f', '--fmt', help='List of labels used in the output file', required=False,nargs='*',type=str)
+
+    parser_next.add_argument(
+        '-l', '--log', help='List of parameters (starting at 0) whose sampling will be in log-space', required=False,nargs='*',type=int)
+
+    parser_next.add_argument(
+        '-a', '--args', help='Additional arguments for the optimizer', nargs='*')
+
+
+
+    parser_analyze = subparsers.add_parser('analyze', help='Take a look at the data')
+
+    parser_analyze.add_argument(
+        'Input', help='Filename for the input data')
+
+    parser_analyze.add_argument(
+        '-p', '--plot', help='Save a plot of the fit',type=str)
+
+    parser_analyze.add_argument(
+        '-m', '--method', help='Method for choosing new points',type=str)
+
+    parser_analyze.add_argument(
+        '-e', '--err', action='store_true', help='Plot the error in the fit')
+
+    parser_analyze.add_argument(
+        '-f', '--labels', help='List of labels to use in the plots', required=False,nargs='*',type=str)
+
+    parser_analyze.add_argument(
+        '-l', '--log', help='List of parameters (starting at 0) whose sampling will be in log-space. NOT YET IMPLEMENTED.', required=False,nargs='*',type=int)
+
+    args = parser.parse_args()
+    
+    kwargs = {k:v for k,v in vars(args).iteritems() if v is not None}
+
+    commands = {'init': runInit, 'next': runNext, 'analyze' : runAnalysis}
+
+    command = commands[kwargs['subparser']]
+    del kwargs['subparser']
+    command(**kwargs)

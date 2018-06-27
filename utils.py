@@ -1,19 +1,30 @@
-from scipy.optimize import minimize,fmin
+from scipy.optimize import minimize,fmin, minimize
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.special import erf
 import blackbox as bb
 
+VERSION = 180625
+
 def loadFile(f):
 	F = open(f,'r')
 	outList = []
-	for i, FF in enumerate(F):
-		if i == 0:
-			nCols = len(FF.split())
+	inFirstLine = True
+	lines = []
+	nCols = 0
+	for FF in F:
 		if FF[0] == "#":
 			continue
-		if len(FF.split()) == nCols:
-			outList.append(map(float,FF.split()))
+		lines.append(FF.split())
+		nCols = len(FF.split()) if len(FF.split()) > nCols else nCols
+
+	print 'nCols',nCols
+
+	for l in lines:
+		if l[0] == "#":
+			continue
+		if len(l) == nCols:
+			outList.append(map(float,l))
 		else:
 			continue
 			
@@ -30,7 +41,7 @@ def PDFtoChisq(fRed,d):
 	return np.subtract(chisq,np.min(chisq))
 
 
-def analyzeFit(fit,box,plot=True,showPlot=True,plotfn='fit',labels=None,searchRange = None,searchFraction=0.2,PDF_func=chisqToPDF,PDF_inv_func=PDFtoChisq,errFit=None):
+def analyzeFit(fit,box,plot=True,showPlot=False,plotfn='fit',labels=None,searchRange = None,searchFraction=0.2,PDF_func=chisqToPDF,PDF_inv_func=PDFtoChisq,errFit=None):
 	## This function will take a fit function which is defined over a space defined by box and return the best fit parameters over that space
 	## That fit function must take in a list of lists of parameters with a shape (n,d) and return a list with shape (n).
 	
@@ -85,7 +96,7 @@ def analyzeFit(fit,box,plot=True,showPlot=True,plotfn='fit',labels=None,searchRa
 
 	# Just to be safe, make everything a ndarray.
 	searchRange = np.asarray(searchRange)
-	# searchRange = np.asarray(box)
+	searchRange = np.asarray(box)
 	# print searchRange
 
 	# Get the number of dimensions and find the smallest grid with more than a given number of points in that dimension.
@@ -238,6 +249,83 @@ def analyzeFit(fit,box,plot=True,showPlot=True,plotfn='fit',labels=None,searchRa
 		
 	return bestFits
 
+def plotSlices(fit,box,plotRange,plotName,unslicedIndices=[0,1], nSlices = [10,10]):
+
+	## This scheme will only work for 4D systems
+
+	fig, axes = plt.subplots(nSlices[0],nSlices[1])
+
+	slicedAxes = set(range(len(box)))
+	for i in set(unslicedIndices):
+		slicedAxes.remove(i)
+	slicedAxes = list(slicedAxes)
+
+	slicedLists = []
+	for i in range(2):
+		slicedLists.append(np.linspace(plotRange[slicedAxes[i],0],plotRange[slicedAxes[i],1],num=nSlices[i]))
+
+
+	imageSize = 50
+
+	unslicedLists = []
+	for i in range(2):
+		unslicedLists.append(np.linspace(plotRange[unslicedIndices[i],0],plotRange[unslicedIndices[i],1],num=imageSize))
+
+
+	print slicedLists
+
+
+	chisqrange = - len(box) * np.log(1 - erf(5 / 2**0.5))
+
+
+
+	fs = []
+	for i in range(1000):
+		print i
+		pt = np.random.rand(1,len(box))
+		xx = np.asarray(bb.unScalePoints(box,pt))
+		func_min = minimize(fit,xx,bounds = box)
+		fs.append(func_min.fun[0])
+
+
+
+
+
+	# x0 = [0.5 * (b[1] + b[0]) for b in box]
+	# func_min = minimize(fit,x0,bounds = box)
+	# print func_min
+	# print dir(func_min)
+
+	# chisqmin = func_min.fun[0]
+	chisqmin = np.min(fs)
+	print chisqmin, chisqrange
+	# chisqmin = 0
+	# chisqrange = 1
+
+	for i in range(nSlices[0]):
+		for j in range(nSlices[1]):
+			print i,j
+			image = np.zeros((imageSize,imageSize))
+			for k in range(imageSize):
+				for l in range(imageSize):
+					params = np.zeros(len(box))
+					params[slicedAxes[0]] = slicedLists[0][i]
+					params[slicedAxes[1]] = slicedLists[1][j]
+					params[unslicedIndices[0]] = unslicedLists[0][k]
+					params[unslicedIndices[1]] = unslicedLists[1][l]
+					# print params
+					image[k,l] = fit([params])
+			axes[i,j].imshow(np.flipud(np.transpose(image)),vmin=chisqmin,vmax=chisqmin + chisqrange, cmap = 'jet')
+			axes[i,j].set_yticklabels([])
+			axes[i,j].set_xticklabels([])
+
+	fig.subplots_adjust(hspace=0.,wspace=0.)
+
+
+	plt.savefig(plotName)
+
+	plt.show()
+
 def getGridDimensions(N,d):
 	n = N**(1./d)
 	n = int(n - (n % 1) + 1)
@@ -347,8 +435,11 @@ def plotNewPointsRBF(prevPoints,newPoints,plotfn,PDF_func=chisqToPDF,labels=None
 		for jj in range(d):
 			axes[ii,jj].set_xticklabels([])
 			
+			if ii != d-1:
+				axes[ii+1,jj+1].set_yticklabels([])
 
-			axes[ii+1,jj+1].set_yticklabels([])
+
+			# axes[ii+1,jj+1].set_yticklabels([])
 			
 
 			dist = marginalizePDF(pF,[ii,jj])
@@ -462,7 +553,7 @@ def plotNewPointsBayes(prevPoints,newPoints,plotfn,PDF_func=chisqToPDF,labels=No
 	f = fit(sPoints).reshape(s)
 	Sig = stdFit(sPoints).reshape(s)
 
-	print np.min(f),np.mean(f),np.max(f),np.std(f)
+	# print np.min(f),np.mean(f),np.max(f),np.std(f)
 
 	# Turn the fit function grid into a PDF grid.
 	pF = PDF_func(f,d)
@@ -478,13 +569,6 @@ def plotNewPointsBayes(prevPoints,newPoints,plotfn,PDF_func=chisqToPDF,labels=No
 	chisqCutoff = - d * np.log(1 - erf(5 / 2**0.5))
 
 	levels = [- d * np.log(1 - erf(II / 2**0.5)) for II in [1,2,3,4]]
-
-	## TEMPORARY
-
-	# chisqCutoff = - d * np.log(1 - erf(8 / 2**0.5))
-
-	# levels = [- d * np.log(1 - erf(II / 2**0.5)) for II in [2,4,6,8]]
-
 
 
 
@@ -552,7 +636,7 @@ def plotNewPointsBayes(prevPoints,newPoints,plotfn,PDF_func=chisqToPDF,labels=No
 
 	fig.savefig(plotfn + "_fit.png")
 	figchisq.savefig(plotfn + "_fitErr.png")
-	# plt.show()
+	plt.show()
 	plt.close()
 
 	pass
