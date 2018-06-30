@@ -1,19 +1,23 @@
 from scipy.optimize import minimize,fmin, minimize
 import numpy as np
 import matplotlib.pyplot as plt
+from matplotlib.backends.backend_pdf import PdfPages
 from scipy.special import erf
 import blackbox as bb
 
 VERSION = 180625
 
-def loadFile(f):
+def loadFile(f,grabLabels=False):
 	F = open(f,'r')
 	outList = []
 	inFirstLine = True
 	lines = []
 	nCols = 0
-	for FF in F:
+	labels = None
+	for i,FF in enumerate(F):
 		if FF[0] == "#":
+			if i == 0:
+				labels=header.strip('#').split()[:-1]
 			continue
 		lines.append(FF.split())
 		nCols = len(FF.split()) if len(FF.split()) > nCols else nCols
@@ -27,8 +31,10 @@ def loadFile(f):
 			outList.append(map(float,l))
 		else:
 			continue
-			
-	return np.asarray(outList)
+	if grabLabels:
+		return(np.asarray(outList))
+	else:
+		return(np.asarray(outList),labels)
 
 
 
@@ -164,87 +170,79 @@ def analyzeFit(fit,box,plot=True,showPlot=False,plotfn='fit',labels=None,searchR
 		chisqCutoff = - d * np.log(1 - erf(5 / 2**0.5))
 		levels = [np.min(f) - d * np.log(1 - erf(II / 2**0.5)) for II in [1,2,3,4]]
 
-		fig, axes = plt.subplots(d+1,d+1)
-		figchisq, axeschisq = plt.subplots(d+1,d+1)
 		if plotErr:
-			figerr, axeserr = plt.subplots(d+1,d+1)
+			arraysToPlot = [f,ferr]
+		else:
+			arraysToPlot = [f]
 
+		figsize=(10,10)
 
-		for ii in range(d):
-			for jj in range(d):
-				axes[ii,jj].set_xticklabels([])
-				axeschisq[ii,jj].set_xticklabels([])
+		minIndices = np.unravel_index(np.argmin(f),np.shape(f))
 
-				if plotErr:
-					axeserr[ii,jj].set_xticklabels([])
-
-				if ii != d-1:
-					axes[ii+1,jj+1].set_yticklabels([])
-					axeschisq[ii+1,jj+1].set_yticklabels([])
-					if plotErr:
-						axeserr[ii+1,jj+1].set_yticklabels([])
-
-				dist = marginalizePDF(pF,[ii,jj])
-				chisqIm = marginalizeOverPDF(pF,f,[ii,jj])
-				if plotErr:
-					errIm = marginalizeOverPDF(pF,ferr,[ii,jj])
-
-				if ii == jj:
-					axes[d-ii-1,d-jj].set_visible(False)
-					axeschisq[d-ii-1,d-jj].set_visible(False)
-
-					axes[-1,d-jj].plot(axisLists[ii], dist)
-					axeschisq[-1,d-jj].plot(axisLists[ii], chisqIm)
-
-					axes[-1,d-jj].set_xlabel(labels[ii])
-					axeschisq[-1,d-jj].set_xlabel(labels[ii])
-
-					axes[d-ii-1,0].plot(dist, axisLists[ii])
-					axeschisq[d-ii-1,0].plot(chisqIm, axisLists[ii])
-
-					axes[d-ii-1,0].set_ylabel(labels[ii])
-					axeschisq[d-ii-1,0].set_ylabel(labels[ii])
-
-					if plotErr:
-						axeserr[d-ii-1,d-jj].set_visible(False)
-						axeserr[-1,d-jj].plot(axisLists[ii], errIm)
-						axeserr[-1,d-jj].set_xlabel(labels[ii])
-						axeserr[d-ii-1,0].plot(errIm, axisLists[ii])
-						axeserr[d-ii-1,0].set_ylabel(labels[ii])
-
-				elif ii < jj:
-					axes[d-ii-1,d-jj].imshow(np.flipud(dist),extent=(min(axisLists[jj]),max(axisLists[jj]),min(axisLists[ii]),max(axisLists[ii])), aspect='auto',cmap='jet')
-					axes[d-ii-1,d-jj].contour(chisqIm,extent=(min(axisLists[jj]),max(axisLists[jj]),min(axisLists[ii]),max(axisLists[ii])),levels = levels,colors='r')
-
-					axeschisq[d-ii-1,d-jj].imshow(np.flipud(chisqIm),extent=(min(axisLists[jj]),max(axisLists[jj]),min(axisLists[ii]),max(axisLists[ii])), aspect='auto',vmin=np.min(chisqIm),vmax=np.min(chisqIm) + chisqCutoff,cmap='jet')
-					axeschisq[d-ii-1,d-jj].contour(chisqIm,extent=(min(axisLists[jj]),max(axisLists[jj]),min(axisLists[ii]),max(axisLists[ii])),levels = levels,colors='r')
-					
-					if plotErr:
-						axeserr[d-ii-1,d-jj].imshow(np.flipud(errIm),extent=(min(axisLists[jj]),max(axisLists[jj]),min(axisLists[ii]),max(axisLists[ii])), aspect='auto',vmin=0,vmax=50.,cmap='jet')
-						axeserr[d-ii-1,d-jj].contour(chisqIm,extent=(min(axisLists[jj]),max(axisLists[jj]),min(axisLists[ii]),max(axisLists[ii])),levels = levels,colors='r')
-					
-				else:
-					axes[d-ii-1,d-jj].set_visible(False)
-					axeschisq[d-ii-1,d-jj].set_visible(False)
-					if plotErr:
-						axeserr[d-ii-1,d-jj].set_visible(False)
-
-		fig.subplots_adjust(hspace=0.,wspace=0.)
-		figchisq.subplots_adjust(hspace=0.,wspace=0.)
-
-		axes[-1,0].set_visible(False)
-		axeschisq[-1,0].set_visible(False)
-
-		fig.savefig(plotfn + ".png")
-		figchisq.savefig(plotfn + "_chisq.png")
-		if plotErr:
-			figerr.subplots_adjust(hspace=0.,wspace=0.)
-			axeserr[-1,0].set_visible(False)
-			figerr.savefig(plotfn + "_err.png")
-		# print showPlot
-		if showPlot:
-			plt.show()
 		plt.close()
+		with PdfPages(plotfn + '.pdf') as pdf:
+
+			for data in arraysToPlot:
+
+				fig, axes = plt.subplots(d+2,d+2,figsize=figsize)
+
+				axes[0,0].set_visible(False)
+				axes[-1,0].set_visible(False)
+				axes[0,-1].set_visible(False)
+				axes[-1,-1].set_visible(False)
+
+				for ii in range(d):
+					dataIm = marginalizeOverPDF(pF,data,[ii,ii])
+
+					dataMin = sliceArray(data,[ii],minIndices)
+
+					axes[-1,ii+1].plot(axisLists[ii], dataIm)
+					axes[0,ii+1].plot(axisLists[ii], dataMin)
+					axes[-1,ii+1].set_xlabel(labels[ii])
+
+					axes[0,ii+1].xaxis.set_label_position("top")
+					axes[0,ii+1].set_xlabel(labels[ii])
+					axes[0,ii+1].tick_params(axis='x',direction='in', pad = -15)
+
+					axes[ii+1,0].plot(dataIm, axisLists[ii])
+					axes[ii+1,-1].plot(dataMin, axisLists[ii])
+
+					axes[ii+1,0].set_ylabel(labels[ii])
+					axes[ii+1,0].set_xticklabels([])
+
+					axes[ii+1,-1].yaxis.set_label_position("right")
+					axes[ii+1,-1].set_ylabel(labels[ii])
+					axes[ii+1,-1].set_xticklabels([])
+					axes[ii+1,-1].tick_params(axis='y',direction='in', pad = -25)
+
+					axes[ii+1,ii+1].set_visible(False)
+
+				for ii in range(d-1):
+					for jj in range(ii+1,d):
+
+						axes[jj+1,ii+1].set_xticklabels([])
+						axes[jj+1,ii+1].set_yticklabels([])
+
+						axes[ii+1,jj+1].set_xticklabels([])
+						axes[ii+1,jj+1].set_yticklabels([])
+
+						dataIm = np.transpose(marginalizeOverPDF(pF,data,[ii,jj]))
+
+						dataMin = sliceArray(data,[ii,jj],minIndices)
+
+						chisqIm = np.transpose(marginalizeOverPDF(pF,f,[ii,jj]))
+						chisqMin = sliceArray(f,[ii,jj],minIndices)
+						
+						axes[jj+1,ii+1].imshow(np.flipud(dataIm),extent=(min(axisLists[jj]),max(axisLists[jj]),min(axisLists[ii]),max(axisLists[ii])), aspect='auto',cmap='jet',vmin=np.min(dataIm),vmax=np.min(dataIm) + chisqCutoff)
+						axes[jj+1,ii+1].contour(chisqIm,extent=(min(axisLists[jj]),max(axisLists[jj]),min(axisLists[ii]),max(axisLists[ii])),levels = levels,colors='r')
+
+						axes[ii+1,jj+1].imshow(np.flipud(dataMin),extent=(min(axisLists[jj]),max(axisLists[jj]),min(axisLists[ii]),max(axisLists[ii])), aspect='auto',cmap='jet',vmin=np.min(dataMin),vmax=np.min(dataMin) + chisqCutoff)
+						axes[ii+1,jj+1].contour(chisqMin,extent=(min(axisLists[jj]),max(axisLists[jj]),min(axisLists[ii]),max(axisLists[ii])),levels = levels,colors='r')
+
+				fig.subplots_adjust(hspace=0.,wspace=0.)
+
+				pdf.savefig()
+				plt.close()
 
 		
 	return bestFits
@@ -340,6 +338,13 @@ def marginalizePDF(PDF,remainingAxes):
 	mPDF = np.sum(PDF,axis=tuple(axes))
 	mPDF = np.divide(mPDF,np.sum(mPDF))
 	return(mPDF)
+
+
+def sliceArray(data,remainingAxes,slicePoint):
+	slicePoint = list(slicePoint)
+	for i in remainingAxes:
+		slicePoint[i] = slice(None)
+	return(data[slicePoint])
 
 def marginalizeOverPDF(PDF,fx,remainingAxes):
 	axes = set(range(len(PDF.shape)))
