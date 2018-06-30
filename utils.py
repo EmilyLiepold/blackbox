@@ -5,7 +5,7 @@ from matplotlib.backends.backend_pdf import PdfPages
 from scipy.special import erf
 import blackbox as bb
 
-VERSION = 180625
+VERSION = 180629
 
 def loadFile(f,grabLabels=False):
 	F = open(f,'r')
