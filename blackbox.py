@@ -346,13 +346,19 @@ def getNextPointsBayes(inpoints,N,regrid=False,scale=None,kappa=1.96,rho0 = 1.0,
     ###### GRAB THE NEW BOUNDS
     dimensions = getBox(points[:,:-1])
 
+
+    fit, err = getFitBayes(points,returnStd=True)
+
     ###### Build a guess for the kernel which has length scale 1/10 of the length of the box and white noise up to 10
     kernel = RBF([0.1 * (d[1] - d[0]) for d in dimensions], [(1e-5, d[1] - d[0]) for d in dimensions]) * ConstantKernel(1.0, (1e-5, 1e8))  + WhiteKernel(noise_level_bounds = (1e-5,1e1))
 
     ###### Construct the GPR with that kernel
     model = GaussianProcessRegressor(alpha=1e-10, kernel=kernel,n_restarts_optimizer=2,normalize_y=True)
     
-    
+    def acq_func(X):
+        return(np.subtract(fit(X),np.power(err(X),2) / (2 * len(dimensions))))
+
+
     
     newpoints = []
 
@@ -366,13 +372,13 @@ def getNextPointsBayes(inpoints,N,regrid=False,scale=None,kappa=1.96,rho0 = 1.0,
     rr = ((rho0)/(v1*(len(points))))**(1./len(dimensions))
 
     ###### Fit the model to the currently known points.
-    model.fit(points[:,:-1],points[:,-1])
+    # model.fit(points[:,:-1],points[:,-1])
 
     ###### Just to be safe, we're going to generate N^2 test points
     n_points = N * N
 
     ###### We'll also stick with the 99% CI for the LCB.
-    acq_func_kwargs={'kappa':1.96}
+    # acq_func_kwargs={'kappa':1.96}
 
 
 
@@ -424,9 +430,11 @@ def getNextPointsBayes(inpoints,N,regrid=False,scale=None,kappa=1.96,rho0 = 1.0,
     next_xs_ = []
     
     ###### Find the LCB value at each of the test points and sort the test points by those values
-    values = acq._gaussian_acquisition(
-        X=X, model=model,acq_func="LCB",acq_func_kwargs=acq_func_kwargs)
-   
+    # values = acq._gaussian_acquisition(
+        # X=X, model=model,acq_func="LCB",acq_func_kwargs=acq_func_kwargs)
+
+    values = acq_func(X)
+
     x0 = X[np.argsort(values)[:n_points]]
     v0 = values[np.argsort(values)[:n_points]]
 
@@ -454,7 +462,8 @@ def getNextPointsBayes(inpoints,N,regrid=False,scale=None,kappa=1.96,rho0 = 1.0,
 
             ###### Try to minimize the LCB given a particular test point.
             try:
-                results = op.minimize(acq.gaussian_acquisition_1D,x0[trialIndex],args=(model, None, "LCB", acq_func_kwargs, False),method="SLSQP",bounds=dimensions,constraints = cons, options={'maxiter':100})
+                # results = op.minimize(acq.gaussian_acquisition_1D,x0[trialIndex],args=(model, None, "LCB", acq_func_kwargs, False),method="SLSQP",bounds=dimensions,constraints = cons, options={'maxiter':100})
+                results = op.minimize(acq_func,x0[trialIndex],method="SLSQP",bounds=dimensions,constraints = cons, options={'maxiter':100})
                 trialIndex += 1
                 break
             ###### If the fit didn't work, move onto the next trial point.
@@ -481,7 +490,7 @@ def getNextPointsBayes(inpoints,N,regrid=False,scale=None,kappa=1.96,rho0 = 1.0,
         cand_acqs = np.array(results.fun)
 
         ###### Add the minimizing point to the list of points.
-        newpoint = np.r_[cand_xs, model.predict(cand_xs.reshape(1,-1))]
+        newpoint = np.r_[cand_xs, fit(cand_xs.reshape(1,-1))]
         points = np.r_[points,newpoint.reshape(1,-1)]
 
         ###### Add the new point to the list of new points
@@ -769,7 +778,7 @@ def rbf(points, T):
 
     return fit
 
-def runInit(Output, Bounds, N, fmt = None, log = []):
+def runInit(Output, Bounds, N, fmt = None, log = [],fst=None):
 
     if len(Bounds) % 2 == 1:
         print("Found an odd number of bounds! Make sure that you've included both a lower and an upper bound for each dimension!")
@@ -792,9 +801,14 @@ def runInit(Output, Bounds, N, fmt = None, log = []):
         header = " ".join(["Param" + str(i+1) for i in range(len(box))])
         np.savetxt(Output,points,header=header)
     else:
-        def formatLine(line):
-            out = "".join([fmt[i] + ",%.2e " % line[i] for i in range(len(line))]) + "\n"
-            return(out)
+        if fst == None:
+            def formatLine(line):
+                out = "".join([fmt[i] + ",%.2e " % line[i] for i in range(len(line))]) + "\n"
+                return(out)
+        else:
+            def formatLine(line):
+                out = "".join([fmt[i] + ","+fst[i]+" " % line[i] for i in range(len(line))]) + "\n"
+                return(out)
 
         header = "# " + " ".join(fmt) + "\n"
         out = open(Output,'w')
@@ -805,7 +819,7 @@ def runInit(Output, Bounds, N, fmt = None, log = []):
 
     pass
 
-def runNext(N, Input, Output, method = 'bayes', plot = None, args = [],fmt = None, log=[]):
+def runNext(N, Input, Output, method = 'bayes', plot = None, args = [],fmt = None, log=[],fst=None):
 
     allowedParams = ['p', 'rho', 'nrand', 'randfrac', 'method']
     optParams = {}
@@ -823,7 +837,7 @@ def runNext(N, Input, Output, method = 'bayes', plot = None, args = [],fmt = Non
             exit(1)
 
     inpoints = u.loadFile(Input)
-
+    print inpoints
     if fmt is not None and len(fmt) != len(inpoints[0]) - 1:
         print("The number of labels doesn't match the number of parameters!")
         exit(1)
@@ -853,9 +867,14 @@ def runNext(N, Input, Output, method = 'bayes', plot = None, args = [],fmt = Non
         header = " ".join(["Param" + str(i+1) for i in range(len(newpoints[0]))])
         np.savetxt(Output,newpoints,header=header)
     else:
-        def formatLine(line):
-            out = "".join([fmt[i] + ",%.2e " % line[i] for i in range(len(line))]) + "\n"
-            return(out)
+        if fst == None:
+            def formatLine(line):
+                out = "".join([(fmt[i] + ",%.2e ") % line[i] for i in range(len(line))]) + "\n"
+                return(out)
+        else:
+            def formatLine(line):
+                out = "".join([(fmt[i] + ","+fst[i]+" ") % line[i] for i in range(len(line))]) + "\n"
+                return(out)
 
         header = "# " + " ".join(fmt) + "\n"
         out = open(Output,'w')
@@ -867,7 +886,7 @@ def runNext(N, Input, Output, method = 'bayes', plot = None, args = [],fmt = Non
 
     pass
 
-def runAnalysis(Input, plot=None, method = 'bayes', err = False,labels = None,log=[]):
+def runAnalysis(Input, plot=None, method = 'bayes', err = False,labels = None,log=[],box=None):
 
 
     inpoints = u.loadFile(Input)
@@ -884,7 +903,11 @@ def runAnalysis(Input, plot=None, method = 'bayes', err = False,labels = None,lo
 
     inpoints[:,log] = np.log10(inpoints[:,log])    
 
-    box = getBox(inpoints[:,:-1])
+    if box is None:
+        box = getBox(inpoints[:,:-1])
+    else:
+        newBox = [[float(box[2*i]),float(box[2*i+1])] for i in range(len(box) / 2)]
+        box = np.asarray(newBox)
 
     d = len(inpoints[0]) - 1
 
@@ -936,6 +959,9 @@ if __name__ == '__main__':
         '-f', '--fmt', help='List of labels used in the output file', required=False,nargs='*',type=str)
 
     parser_init.add_argument(
+        '-s', '--fst', help='List of formatting strings used in the output file', required=False,nargs='*',type=str)
+
+    parser_init.add_argument(
         '-l', '--log', help='List of parameters (starting at 0) whose sampling will be in log-space', required=False,nargs='*',type=int)
 
     parser_next = subparsers.add_parser('next', help='Get the next set of points')
@@ -957,6 +983,9 @@ if __name__ == '__main__':
 
     parser_next.add_argument(
         '-f', '--fmt', help='List of labels used in the output file', required=False,nargs='*',type=str)
+
+    parser_next.add_argument(
+        '-s', '--fst', help='List of formatting strings used in the output file', required=False,nargs='*',type=str)
 
     parser_next.add_argument(
         '-l', '--log', help='List of parameters (starting at 0) whose sampling will be in log-space', required=False,nargs='*',type=int)
@@ -985,6 +1014,9 @@ if __name__ == '__main__':
 
     parser_analyze.add_argument(
         '-l', '--log', help='List of parameters (starting at 0) whose sampling will be in log-space. NOT YET IMPLEMENTED.', required=False,nargs='*',type=int)
+
+    parser_analyze.add_argument(
+        '-b', '--box', help='List of pairs of lower and upper bounds to use for analysis and plotting.', required=False,nargs='*')
 
     args = parser.parse_args()
     

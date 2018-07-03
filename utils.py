@@ -17,7 +17,7 @@ def loadFile(f,grabLabels=False):
 	for i,FF in enumerate(F):
 		if FF[0] == "#":
 			if i == 0:
-				labels=header.strip('#').split()[:-1]
+				labels=FF.strip('#').split()[:-1]
 			continue
 		lines.append(FF.split())
 		nCols = len(FF.split()) if len(FF.split()) > nCols else nCols
@@ -32,14 +32,22 @@ def loadFile(f,grabLabels=False):
 		else:
 			continue
 	if grabLabels:
-		return(np.asarray(outList))
-	else:
 		return(np.asarray(outList),labels)
+	else:
+		return(np.asarray(outList))
 
 
 
-def chisqToPDF(chisq,d):
-	fRed = np.exp(-np.divide(np.subtract(chisq,np.min(chisq)),d))
+def chisqToPDF(chisq,d,err = None):
+	if err is None:
+		fRed = np.exp(-np.divide(np.subtract(chisq,np.min(chisq)),d))
+	else:
+		fRed = np.exp(np.add(-np.divide(np.subtract(chisq,np.min(chisq)),d),np.divide(np.power(err,2),2 * d * d)))
+		print 'MEAN'
+		# print -np.divide(np.subtract(chisq,np.min(chisq)),d)
+		print 'ERR'
+		print np.max(err[chisq < 10000])
+		# print np.divide(np.power(err,2),2 * d * d)
 	return np.divide(fRed,np.sum(fRed))
 
 def PDFtoChisq(fRed,d):
@@ -132,7 +140,10 @@ def analyzeFit(fit,box,plot=True,showPlot=False,plotfn='fit',labels=None,searchR
 	# print np.mean(f),np.min(f)
 
 	# Turn the fit function grid into a PDF grid.
-	pF = PDF_func(f,d)
+	if plotErr:
+		pF = PDF_func(f,d,err=ferr)
+	else:
+		pF = PDF_func(f,d)
 
 	# Marginalize over each dimension to find the mean and stdev over those dimensions.
 	bestFits = np.asarray([bestValFromPDF(marginalizePDF(pF,[i,i]),axisLists[i]) for i in range(d)])
