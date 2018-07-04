@@ -241,7 +241,7 @@ def getFitBayes(inpoints,returnStd=False,scale=None):
         ## (overflow, since we've inverted the objective function),
         ## make it an arbitrarily small number
 
-        y_pred[y_pred > 0] = -1e-30
+        y_pred[y_pred > -1e-2] = -1e-2
 
         ## Return the objective function.
         y_pred = np.divide(MIN,y_pred)
@@ -266,8 +266,9 @@ def getFitBayes(inpoints,returnStd=False,scale=None):
             ## If a predicted point is less than 0 
             ## (overflow, since we've inverted the objective function),
             ## make it an arbitrarily small number
-            y_pred[y_pred > 0] = -1e-30
-            sigma[y_pred > 0] = 0.
+            sigma[y_pred > -1e-2] = 0.
+            y_pred[y_pred > -1e-2] = -1e-2
+
 
             ## Calculate the error in the objective function.
             sigma = np.abs(np.multiply(np.divide(MIN,np.multiply(y_pred,y_pred)),sigma))
@@ -350,14 +351,14 @@ def getNextPointsBayes(inpoints,N,regrid=False,scale=None,kappa=1.96,rho0 = 1.0,
 
     fit, err = getFitBayes(points,returnStd=True)
 
-    ###### Build a guess for the kernel which has length scale 1/10 of the length of the box and white noise up to 10
-    kernel = RBF([0.1 * (d[1] - d[0]) for d in dimensions], [(1e-5, d[1] - d[0]) for d in dimensions]) * ConstantKernel(1.0, (1e-5, 1e8))  + WhiteKernel(noise_level_bounds = (1e-5,1e1))
+    # ###### Build a guess for the kernel which has length scale 1/10 of the length of the box and white noise up to 10
+    # kernel = RBF([0.1 * (d[1] - d[0]) for d in dimensions], [(1e-5, d[1] - d[0]) for d in dimensions]) * ConstantKernel(1.0, (1e-5, 1e8))  + WhiteKernel(noise_level_bounds = (1e-5,1e1))
 
-    ###### Construct the GPR with that kernel
-    model = GaussianProcessRegressor(alpha=1e-10, kernel=kernel,n_restarts_optimizer=2,normalize_y=True)
+    # ###### Construct the GPR with that kernel
+    # model = GaussianProcessRegressor(alpha=1e-10, kernel=kernel,n_restarts_optimizer=2,normalize_y=True)
     
     def acq_func(X):
-        return(np.subtract(fit(X),np.power(err(X),2) / (2 * len(dimensions))))
+        return(np.subtract(fit(X),kappa * err(X) ))
 
 
     
@@ -895,10 +896,10 @@ def runAnalysis(Input, plot=None, method = 'bayes', err = False,labels = None,lo
 
 
     if plot == None:
-        plotfn = Input + ".png"
+        plotfn = Input
         plot = False
     else:
-        plotfn = plot + ".png"
+        plotfn = plot
         plot = True
 
 
@@ -932,6 +933,14 @@ def runAnalysis(Input, plot=None, method = 'bayes', err = False,labels = None,lo
     B = np.power(10,BF[log,0] - BF[log,1])
     BF[log,0] = 0.5 * np.add(A,B)
     BF[log,1] = 0.5 * np.subtract(A,B)
+
+
+    # def acq_func(X):
+    #     return(np.subtract(fit(X),(np.power(errFit(X),2) / (2 * d))))
+
+    # u.plotSlices(fit,box,box,plotfn + "_fit.pdf")
+    # u.plotSlices(errFit,box,box,plotfn + "_err.pdf")
+    # u.plotSlices(acq_func,box,box,plotfn + "_acq.pdf")
     
     print BF
     return BF
