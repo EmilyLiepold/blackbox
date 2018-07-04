@@ -267,6 +267,7 @@ def getFitBayes(inpoints,returnStd=False,scale=None):
             ## (overflow, since we've inverted the objective function),
             ## make it an arbitrarily small number
             y_pred[y_pred > 0] = -1e-30
+            sigma[y_pred > 0] = 0.
 
             ## Calculate the error in the objective function.
             sigma = np.abs(np.multiply(np.divide(MIN,np.multiply(y_pred,y_pred)),sigma))
