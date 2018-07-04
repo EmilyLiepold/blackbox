@@ -32,9 +32,9 @@ def loadFile(f,grabLabels=False):
 		else:
 			continue
 	if grabLabels:
-		return(np.asarray(outList))
-	else:
 		return(np.asarray(outList),labels)
+	else:
+		return(np.asarray(outList))
 
 
 
