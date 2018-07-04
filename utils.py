@@ -17,7 +17,7 @@ def loadFile(f,grabLabels=False):
 	for i,FF in enumerate(F):
 		if FF[0] == "#":
 			if i == 0:
-				labels=header.strip('#').split()[:-1]
+				labels=FF.strip('#').split()[:-1]
 			continue
 		lines.append(FF.split())
 		nCols = len(FF.split()) if len(FF.split()) > nCols else nCols
