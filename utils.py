@@ -71,6 +71,7 @@ def chisqToPDF(chisq,d,err = None):
     fRed = np.exp(-np.divide(np.subtract(chisq,np.min(chisq)),d))
     return np.divide(fRed,np.sum(fRed))
 
+
 def PDFtoChisq(fRed,d):
     chisq = np.multiply(-np.log(fRed),d)
     return np.subtract(chisq,np.min(chisq))
