@@ -13,8 +13,9 @@ import argparse
 from sklearn.gaussian_process import GaussianProcessRegressor
 from sklearn.gaussian_process.kernels import RBF, ConstantKernel,WhiteKernel, Matern
 
+import time
 
-VERSION = 180625
+VERSION = 180709
 
 def get_default_executor():
     """
@@ -95,6 +96,8 @@ def ScalePoint(box,point):
 def ScalePoints(box,points):
     # This function applies ScalePoint() on a list of point. See 
     # ScalePoint() for more details.
+    if type(box) is np.ndarray and type(points) is np.ndarray:
+        return(np.divide(np.subtract(points,box[:,0]),np.subtract(box[:,1],box[:,0])))
 
     return [ScalePoint(box, point) for point in points]
 
@@ -109,7 +112,7 @@ def getBox(points):
     # This function takes a list of points (either unScaled or Scaled) and 
     # returns the smallest box which bounds those points. That box will have shape (d,2)
 
-    return(np.asarray([[np.min(points[:,i]),np.max(points[:,i])] for i in range(len(points[0]))]))
+    return(np.c_[np.min(points,axis=0).reshape(-1,1),np.max(points,axis=0).reshape(-1,1)])
 
 def expandBox(box,frac):
 
@@ -196,7 +199,7 @@ def getFitRBF(inpoints,nrand=10000,nrand_frac=0.05):
 def getFitBayes(inpoints,returnStd=False,scale=None):
 
     # Copy the input data.
-    points = copy.deepcopy(inpoints)
+    points = np.asarray(copy.deepcopy(inpoints))
 
     ## Mark down the boundaries of the box
     box = getBox(points[:,:-1])
@@ -223,29 +226,37 @@ def getFitBayes(inpoints,returnStd=False,scale=None):
 
     ## Construct the functions which will be returned.
     def outFit(x):
-        
+        # t = time.time()
         ## Make sure that the input is an array with the proper dimensions.
         if type(x) is not np.ndarray:
             x = np.asarray(x)
         if len(x.shape) == 1:
             x = np.asarray([x])
         
+        # print time.time() - t, 'a'
+        # t = time.time()
         ## Scale the asked point and make it an array
         x = ScalePoints(box,x)
-        x = np.asarray(x)
+        # x = np.asarray(x)
+        # print time.time() - t, 'b'
+        # t = time.time()
 
         ## Get the prediction from the model
         y_pred = model.predict(x,return_std=False)
-
+        # print time.time() - t, 'c'
+        # t = time.time()
         ## If a predicted point is greater than 0 
         ## (overflow, since we've inverted the objective function),
         ## make it an arbitrarily small number
 
-        y_pred[y_pred > -1e-2] = -1e-2
-
+        y_pred = np.clip(y_pred,a_max=-1e-5,a_min=None)
+        # y_pred[y_pred > -1e-2] = -1e-2
+        # print time.time() - t, 'd'
+        # t = time.time()
         ## Return the objective function.
         y_pred = np.divide(MIN,y_pred)
-
+        # print time.time() - t, 'e'
+        # t = time.time()
         return y_pred
 
     if returnStd:
@@ -258,7 +269,7 @@ def getFitBayes(inpoints,returnStd=False,scale=None):
 
             ## Scale the asked point and make it an array
             x = ScalePoints(box,x)
-            x = np.asarray(x)
+            # x = np.asarray(x)
 
             ## Get the prediction from the model
             y_pred, sigma = model.predict(x, return_std=True)
@@ -266,8 +277,10 @@ def getFitBayes(inpoints,returnStd=False,scale=None):
             ## If a predicted point is less than 0 
             ## (overflow, since we've inverted the objective function),
             ## make it an arbitrarily small number
-            sigma[y_pred > -1e-2] = 0.
-            y_pred[y_pred > -1e-2] = -1e-2
+            sigma[y_pred > -1e-5] = 0.
+
+            # y_pred[y_pred > -1e-2] = -1e-2
+            y_pred = np.clip(y_pred,a_max=-1e-5,a_min=None)
 
 
             ## Calculate the error in the objective function.
@@ -888,7 +901,7 @@ def runNext(N, Input, Output, method = 'bayes', plot = None, args = [],fmt = Non
 
     pass
 
-def runAnalysis(Input, plot=None, method = 'bayes', err = False,labels = None,log=[],box=None):
+def runAnalysis(Input, plot=None, method = 'bayes', err = False,labels = None,log=[],box=None,resolution=0):
 
 
     inpoints = u.loadFile(Input)
@@ -923,9 +936,9 @@ def runAnalysis(Input, plot=None, method = 'bayes', err = False,labels = None,lo
 
 
     if labels is not None:
-        BF = u.analyzeFit(fit,box,plot=plot,plotfn=plotfn,labels=labels,errFit=errFit)#,extent=box)
+        BF = u.analyzeFit(fit,box,plot=plot,plotfn=plotfn,datafn=plotfn,labels=labels,errFit=errFit,resolution=resolution)#,extent=box)
     else:
-        BF = u.analyzeFit(fit,box,plot=plot,plotfn=plotfn,errFit=errFit)
+        BF = u.analyzeFit(fit,box,plot=plot,plotfn=plotfn,datafn=plotfn,errFit=errFit,resolution=resolution)
 
     BF = np.asarray(BF)
 
@@ -1027,6 +1040,10 @@ if __name__ == '__main__':
 
     parser_analyze.add_argument(
         '-b', '--box', help='List of pairs of lower and upper bounds to use for analysis and plotting.', required=False,nargs='*')
+
+    parser_analyze.add_argument(
+        '-r', '--resolution', help='List of pairs of lower and upper bounds to use for analysis and plotting.', required=False, type=int)
+
 
     args = parser.parse_args()
     
