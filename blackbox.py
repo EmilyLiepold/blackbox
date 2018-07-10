@@ -13,8 +13,6 @@ import argparse
 from sklearn.gaussian_process import GaussianProcessRegressor
 from sklearn.gaussian_process.kernels import RBF, ConstantKernel,WhiteKernel, Matern
 
-import time
-
 VERSION = 180709
 
 def get_default_executor():
@@ -226,37 +224,28 @@ def getFitBayes(inpoints,returnStd=False,scale=None):
 
     ## Construct the functions which will be returned.
     def outFit(x):
-        # t = time.time()
+        
         ## Make sure that the input is an array with the proper dimensions.
         if type(x) is not np.ndarray:
             x = np.asarray(x)
         if len(x.shape) == 1:
             x = np.asarray([x])
         
-        # print time.time() - t, 'a'
-        # t = time.time()
         ## Scale the asked point and make it an array
         x = ScalePoints(box,x)
-        # x = np.asarray(x)
-        # print time.time() - t, 'b'
-        # t = time.time()
 
         ## Get the prediction from the model
         y_pred = model.predict(x,return_std=False)
-        # print time.time() - t, 'c'
-        # t = time.time()
+
         ## If a predicted point is greater than 0 
         ## (overflow, since we've inverted the objective function),
         ## make it an arbitrarily small number
 
-        y_pred = np.clip(y_pred,a_max=-1e-5,a_min=None)
-        # y_pred[y_pred > -1e-2] = -1e-2
-        # print time.time() - t, 'd'
-        # t = time.time()
+        y_pred = np.clip(y_pred,a_max=-1e-30,a_min=None)
+
         ## Return the objective function.
         y_pred = np.divide(MIN,y_pred)
-        # print time.time() - t, 'e'
-        # t = time.time()
+
         return y_pred
 
     if returnStd:
@@ -269,7 +258,6 @@ def getFitBayes(inpoints,returnStd=False,scale=None):
 
             ## Scale the asked point and make it an array
             x = ScalePoints(box,x)
-            # x = np.asarray(x)
 
             ## Get the prediction from the model
             y_pred, sigma = model.predict(x, return_std=True)
@@ -279,9 +267,7 @@ def getFitBayes(inpoints,returnStd=False,scale=None):
             ## make it an arbitrarily small number
             sigma[y_pred > -1e-5] = 0.
 
-            # y_pred[y_pred > -1e-2] = -1e-2
-            y_pred = np.clip(y_pred,a_max=-1e-5,a_min=None)
-
+            y_pred = np.clip(y_pred,a_max=-1e-30,a_min=None)
 
             ## Calculate the error in the objective function.
             sigma = np.abs(np.multiply(np.divide(MIN,np.multiply(y_pred,y_pred)),sigma))
@@ -364,17 +350,9 @@ def getNextPointsBayes(inpoints,N,regrid=False,scale=None,kappa=1.96,rho0 = 1.0,
 
     fit, err = getFitBayes(points,returnStd=True)
 
-    # ###### Build a guess for the kernel which has length scale 1/10 of the length of the box and white noise up to 10
-    # kernel = RBF([0.1 * (d[1] - d[0]) for d in dimensions], [(1e-5, d[1] - d[0]) for d in dimensions]) * ConstantKernel(1.0, (1e-5, 1e8))  + WhiteKernel(noise_level_bounds = (1e-5,1e1))
-
-    # ###### Construct the GPR with that kernel
-    # model = GaussianProcessRegressor(alpha=1e-10, kernel=kernel,n_restarts_optimizer=2,normalize_y=True)
-    
     def acq_func(X):
         return(np.subtract(fit(X),kappa * err(X) ))
 
-
-    
     newpoints = []
 
     ###### Get the volume constant for a d-dimensional ball
@@ -386,16 +364,8 @@ def getNextPointsBayes(inpoints,N,regrid=False,scale=None,kappa=1.96,rho0 = 1.0,
 
     rr = ((rho0)/(v1*(len(points))))**(1./len(dimensions))
 
-    ###### Fit the model to the currently known points.
-    # model.fit(points[:,:-1],points[:,-1])
-
     ###### Just to be safe, we're going to generate N^2 test points
     n_points = N * N
-
-    ###### We'll also stick with the 99% CI for the LCB.
-    # acq_func_kwargs={'kappa':1.96}
-
-
 
     ###### Start a list of test points
     X = []
@@ -445,9 +415,6 @@ def getNextPointsBayes(inpoints,N,regrid=False,scale=None,kappa=1.96,rho0 = 1.0,
     next_xs_ = []
     
     ###### Find the LCB value at each of the test points and sort the test points by those values
-    # values = acq._gaussian_acquisition(
-        # X=X, model=model,acq_func="LCB",acq_func_kwargs=acq_func_kwargs)
-
     values = acq_func(X)
 
     x0 = X[np.argsort(values)[:n_points]]
@@ -477,7 +444,6 @@ def getNextPointsBayes(inpoints,N,regrid=False,scale=None,kappa=1.96,rho0 = 1.0,
 
             ###### Try to minimize the LCB given a particular test point.
             try:
-                # results = op.minimize(acq.gaussian_acquisition_1D,x0[trialIndex],args=(model, None, "LCB", acq_func_kwargs, False),method="SLSQP",bounds=dimensions,constraints = cons, options={'maxiter':100})
                 results = op.minimize(acq_func,x0[trialIndex],method="SLSQP",bounds=dimensions,constraints = cons, options={'maxiter':100})
                 trialIndex += 1
                 break
@@ -852,7 +818,7 @@ def runNext(N, Input, Output, method = 'bayes', plot = None, args = [],fmt = Non
             exit(1)
 
     inpoints = u.loadFile(Input)
-    print inpoints
+
     if fmt is not None and len(fmt) != len(inpoints[0]) - 1:
         print("The number of labels doesn't match the number of parameters!")
         exit(1)
@@ -876,7 +842,7 @@ def runNext(N, Input, Output, method = 'bayes', plot = None, args = [],fmt = Non
 
     newpoints =  getNextPoints(inpoints, N,fitkwargs=fitkwargs,ptkwargs=ptkwargs, method=method,plot=plot,plotfn=plotfn)
 
-    inpoints[:,log] = np.power(10,inpoints[:,log])
+    newpoints[:,log] = np.power(10,newpoints[:,log])
 
     if fmt == None:
         header = " ".join(["Param" + str(i+1) for i in range(len(newpoints[0]))])
@@ -916,7 +882,7 @@ def runAnalysis(Input, plot=None, method = 'bayes', err = False,labels = None,lo
         plot = True
 
 
-    inpoints[:,log] = np.log10(inpoints[:,log])    
+    inpoints[:,log] = np.log10(inpoints[:,log])
 
     if box is None:
         box = getBox(inpoints[:,:-1])
@@ -936,7 +902,7 @@ def runAnalysis(Input, plot=None, method = 'bayes', err = False,labels = None,lo
 
 
     if labels is not None:
-        BF = u.analyzeFit(fit,box,plot=plot,plotfn=plotfn,datafn=plotfn,labels=labels,errFit=errFit,resolution=resolution)#,extent=box)
+        BF = u.analyzeFit(fit,box,plot=plot,plotfn=plotfn,datafn=plotfn,labels=labels,errFit=errFit,resolution=resolution)
     else:
         BF = u.analyzeFit(fit,box,plot=plot,plotfn=plotfn,datafn=plotfn,errFit=errFit,resolution=resolution)
 
@@ -947,14 +913,6 @@ def runAnalysis(Input, plot=None, method = 'bayes', err = False,labels = None,lo
     BF[log,0] = 0.5 * np.add(A,B)
     BF[log,1] = 0.5 * np.subtract(A,B)
 
-
-    # def acq_func(X):
-    #     return(np.subtract(fit(X),(np.power(errFit(X),2) / (2 * d))))
-
-    # u.plotSlices(fit,box,box,plotfn + "_fit.pdf")
-    # u.plotSlices(errFit,box,box,plotfn + "_err.pdf")
-    # u.plotSlices(acq_func,box,box,plotfn + "_acq.pdf")
-    
     print BF
     return BF
 

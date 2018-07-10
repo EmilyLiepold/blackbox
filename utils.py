@@ -67,7 +67,7 @@ def flattenFor(paramRanges):
     return(params)
 
 
-def chisqToPDF(chisq,d,err = None):
+def chisqToPDF(chisq,d):
     fRed = np.exp(-np.divide(np.subtract(chisq,np.min(chisq)),d))
     return np.divide(fRed,np.sum(fRed))
 
@@ -231,7 +231,7 @@ def analyzeFit(fit,box,plot=True,showPlot=False,plotfn='fit',datafn='data',label
         plotErr = False
 
     searchRange = np.asarray(box)
-    # print searchRange
+
     d = len(box)
 
     datalower1d = [[] for i in range(d)]
@@ -467,7 +467,7 @@ def analyzeFit(fit,box,plot=True,showPlot=False,plotfn='fit',datafn='data',label
     if plot:
         p.dump( datalower, open( fname + '_lower_2d.p', "wb" ) )
         p.dump( dataupper, open( fname + '_upper_2d.p', "wb" ) )
-        
+
     return bestFits
 
 def plotSlices(fit,box,plotRange,plotName,unslicedIndices=[0,1], nSlices = [10,10]):
@@ -581,7 +581,6 @@ def marginalizeOverPDF(PDF,fx,remainingAxes):
     mPDF = marginalizePDF(PDF,remainingAxes)
 
     return(np.divide(mFxPDF,mPDF))
-
 
 
 def bestValFromPDF(PDF,axis):
